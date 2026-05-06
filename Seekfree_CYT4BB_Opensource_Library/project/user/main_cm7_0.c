@@ -36,6 +36,7 @@
 #include "zf_common_headfile.h"
 #include "../code/sensors/imu/imu.h"
 #include "../code/common/types.h"
+#include "../code/hmi/ui/page_debug.h"
 // ���µĹ��̻��߹����ƶ���λ�����ִ�����²���
 // ��һ�� �ر��������д򿪵��ļ�
 // �ڶ��� project->clean  �ȴ��·�����������
@@ -60,20 +61,18 @@ int main(void)
 
     // ������ʼ������������
 
+    debug_display_init();               // ��ʼ���ɷ�������ͨѶ�ӿ�
+
     // ʹ�������жϣ�imu_init() ���ڲ���Ҫ��
     interrupt_global_enable(0);
 
     while(true)
     {
-        // ��ȡ IMU ���ã�
-        // INT2 ģʽ: ÿ�ж϶Ȼ�ˢ�£�imu_update ֱ�Ӷ�ȡ
-        // ����ģʽ: PIT_CH0 ÿ 1ms ˢ�£�imu_update ��ȡ�˲�����
         imu_update(&g_fb);
+        // g_fb.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
-        // g_fb.body_pitch      ǰ���Ƕ�    (rad)
-        // g_fb.body_roll       ���Ƕ�      (rad)
-        // g_fb.gyro_pitch_rate ǰ�����ٶ�  (rad/s)
-        // g_fb.gyro_yaw_rate   ƫ�����ٶ�  (rad/s)
+        debug_display_imu();            // ��ʾ 6 ·IMU ʾ������
+        // ͨ������ CH1:pitch CH2:roll CH3:yaw CH4:gyroX CH5:gyroY CH6:gyroZ (deg/deg*s)
 
         // ������д������
     }

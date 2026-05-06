@@ -32,4 +32,16 @@ void imu_update(Feedback_Data_t *fb);
 void imu_poll(void);
 #endif
 
+// ===== 调试数据导出（供逐飞助手示波器使用）=====
+typedef struct {
+    float pitch_deg;    // 俯仰角 (deg)
+    float roll_deg;     // 横滚角 (deg)
+    float yaw_deg;      // 偏航角 (deg)；轮询模式下固定为 0（无绝对参考）
+    float gyro_x_dps;   // 陀螺仪 X 轴 (deg/s)
+    float gyro_y_dps;   // 陀螺仪 Y 轴 (deg/s)
+    float gyro_z_dps;   // 陀螺仪 Z 轴 (deg/s)
+} IMU_Debug_t;
+
+void imu_get_debug_data(IMU_Debug_t *out);
+
 #endif
