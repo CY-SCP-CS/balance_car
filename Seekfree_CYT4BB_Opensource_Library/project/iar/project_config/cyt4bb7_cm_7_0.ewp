@@ -1118,6 +1118,48 @@
         <file>
             <name>$PROJ_DIR$\..\..\code\本文件夹作用.txt</name>
         </file>
+        <group>
+            <name>app</name>
+            <group>
+                <name>navigation</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_engine.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_engine.h</name>
+                </file>
+            </group>
+        </group>
+        <group>
+            <name>hmi</name>
+            <group>
+                <name>ui</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_debug.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_debug.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav.h</name>
+                </file>
+            </group>
+        </group>
+        <group>
+            <name>sensors</name>
+            <group>
+                <name>imu</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\sensors\imu\imu.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\sensors\imu\imu.h</name>
+                </file>
+            </group>
+        </group>
     </group>
     <group>
         <name>doc</name>
