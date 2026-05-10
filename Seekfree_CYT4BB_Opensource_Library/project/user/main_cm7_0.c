@@ -4,7 +4,7 @@
 #include "../code/app/navigation/nav_engine.h"
 #include "../code/hmi/ui/ui_manager.h"
 
-static Ctrl_Input_t g_fb;
+static Ctrl_Input_t g_ctrl;
 static Nav_Input_t g_nav_input;
 
 int main(void)
@@ -26,14 +26,14 @@ int main(void)
 
     while(true)
     {
-        imu_update(&g_fb);
-        // g_fb.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
+        imu_update(&g_ctrl);
+        // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
-        nav_input_update_from_feedback(&g_nav_input, &g_fb);
+        nav_input_update_from_feedback(&g_nav_input, &g_ctrl);
         Nav_Output_t nav_out = nav_update(&g_nav_input);
-        nav_apply_feedback(&g_fb, &nav_out);
+        nav_apply_feedback(&g_ctrl, &nav_out);
 
-        ui_update(&g_fb, &g_nav_input, &nav_out);
+        ui_update(&g_ctrl, &g_nav_input, &nav_out);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 
