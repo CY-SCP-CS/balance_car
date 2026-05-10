@@ -4,7 +4,7 @@
 
 #define DASHBOARD_RAD_TO_DEG    (180.0f / 3.14159265f)
 
-void dashboard_update(const Feedback_Data_t *fb,
+void dashboard_update(const Ctrl_Input_t *fb,
                       const Nav_Input_t *nav_input,
                       const Nav_Output_t *nav_output)
 {

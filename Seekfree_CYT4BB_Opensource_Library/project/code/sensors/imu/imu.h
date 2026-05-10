@@ -22,10 +22,10 @@
 // 返回 true 表示成功
 bool imu_init(void);
 
-// 将最新 IMU 数据写入 Feedback_Data_t
+// 将最新 IMU 数据写入 Ctrl_Input_t
 // 所有角度单位 rad，角速度单位 rad/s
 // 陀螺仪轴映射假设：Y 轴 = 俯仰，Z 轴 = 偏航；如安装方向不同，修改 imu.c 中映射
-void imu_update(Feedback_Data_t *fb);
+void imu_update(Ctrl_Input_t *fb);
 
 #if !IMU_INT2_ENABLED
 // 从 PIT_CH0 的 ISR 中调用，读取陀螺仪+加速度计并更新互补滤波

@@ -2,7 +2,7 @@
 
 #include "../../common/utils.h"
 
-float run_yaw_control(const Feedback_Data_t *fb,
+float run_yaw_control(const Ctrl_Input_t *fb,
                       PID_Controller_t *pid_yaw,
                       float max_yaw_rate) {
     if (fb->on_bridge) {

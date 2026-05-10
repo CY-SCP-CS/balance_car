@@ -2,13 +2,13 @@
 
 #include "../../common/utils.h"
 
-void run_joint_pd_control(const Output_Data_t *target,
-                          const Feedback_Data_t *fb,
+void run_joint_pd_control(const Ctrl_Output_t *target,
+                          const Ctrl_Input_t *fb,
                           PD_Controller_t *pd_fl,
                           PD_Controller_t *pd_bl,
                           PD_Controller_t *pd_fr,
                           PD_Controller_t *pd_br,
-                          Output_Data_t *out) {
+                          Ctrl_Output_t *out) {
     out->joint_torque_fl = pd_calculate(pd_fl, target->joint_angle_cmd_fl,
                                         fb->motor_angle_fl, fb->motor_vel_fl);
     out->joint_torque_bl = pd_calculate(pd_bl, target->joint_angle_cmd_bl,
@@ -22,7 +22,7 @@ void run_joint_pd_control(const Output_Data_t *target,
 void run_torque_distribution(float total_torque,
                              float steer_diff,
                              const Safety_Limits_t *lim,
-                             Output_Data_t *out) {
+                             Ctrl_Output_t *out) {
     out->wheel_torque_L = clamp(total_torque + steer_diff,
                                 -lim->max_wheel_torque, lim->max_wheel_torque);
     out->wheel_torque_R = clamp(total_torque - steer_diff,

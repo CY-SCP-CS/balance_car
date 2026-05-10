@@ -19,7 +19,7 @@ bool imu_init(void)
     // 需在 gpio_6_exti_isr() 中调用 imu660rc_callback()
 }
 
-void imu_update(Feedback_Data_t *fb)
+void imu_update(Ctrl_Input_t *fb)
 {
     fb->body_pitch      = imu660rc_pitch * DEG_TO_RAD;
     fb->body_roll       = imu660rc_roll  * DEG_TO_RAD;
@@ -91,7 +91,7 @@ void imu_poll(void)
     g_gyro_pitch_rate = gyro_pitch;
 }
 
-void imu_update(Feedback_Data_t *fb)
+void imu_update(Ctrl_Input_t *fb)
 {
     fb->body_pitch      = g_pitch;
     fb->body_roll       = g_roll;

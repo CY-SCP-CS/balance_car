@@ -2,13 +2,13 @@
 
 void run_leg_position_control(float leg_length_delta,
                               const LegConfig_t *leg,
-                              const Feedback_Data_t *fb,
+                              const Ctrl_Input_t *fb,
                               const Safety_Limits_t *lim,
                               PID_Controller_t *pid_x_L,
                               PID_Controller_t *pid_y_L,
                               PID_Controller_t *pid_x_R,
                               PID_Controller_t *pid_y_R,
-                              Output_Data_t *out) {
+                              Ctrl_Output_t *out) {
     float x_target = fb->velocity_cmd * lim->max_lateral_offset;
     float y_target_L = leg->nominal_leg_length + leg_length_delta;
     float y_target_R = leg->nominal_leg_length - leg_length_delta;

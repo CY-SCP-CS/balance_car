@@ -73,12 +73,12 @@ void nav_set_route(const Nav_Segment_t *route, uint8_t route_len);
 void nav_start(const Nav_Input_t *input);
 void nav_stop(void);
 void nav_input_update_from_feedback(Nav_Input_t *input,
-                                    const Feedback_Data_t *fb,
+                                    const Ctrl_Input_t *fb,
                                     float dt_s,
                                     uint32_t dt_ms,
                                     bool enabled);
 Nav_Output_t nav_update(const Nav_Input_t *input);
 Nav_State_t nav_get_state(void);
-void nav_apply_feedback(Feedback_Data_t *fb, const Nav_Output_t *nav);
+void nav_apply_feedback(Ctrl_Input_t *fb, const Nav_Output_t *nav);
 
 #endif

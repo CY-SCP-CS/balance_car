@@ -20,7 +20,7 @@ typedef struct {
     float motor_vel_bl;
     float motor_vel_fr;
     float motor_vel_br;
-} Feedback_Data_t;
+} Ctrl_Input_t;
 
 typedef struct {
     float max_wheel_torque;
@@ -41,6 +41,6 @@ typedef struct {
     float joint_torque_br;
     float wheel_torque_L;
     float wheel_torque_R;
-} Output_Data_t;
+} Ctrl_Output_t;
 
 #endif
