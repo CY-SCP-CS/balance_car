@@ -7,10 +7,6 @@
 static Ctrl_Input_t g_fb;
 static Nav_Input_t g_nav_input;
 
-#define NAV_DEMO_ENABLED       0
-#define NAV_LOOP_DT_S          0.001f
-#define NAV_LOOP_DT_MS         1u
-
 int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
@@ -33,11 +29,7 @@ int main(void)
         imu_update(&g_fb);
         // g_fb.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
-        nav_input_update_from_feedback(&g_nav_input,
-                                       &g_fb,
-                                       NAV_LOOP_DT_S,
-                                       NAV_LOOP_DT_MS,
-                                       (NAV_DEMO_ENABLED != 0));
+        nav_input_update_from_feedback(&g_nav_input, &g_fb);
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_feedback(&g_fb, &nav_out);
 

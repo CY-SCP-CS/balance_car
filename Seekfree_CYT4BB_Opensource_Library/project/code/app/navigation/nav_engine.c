@@ -143,11 +143,6 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
         return out;
     }
 
-    if (!input->enabled) {
-        nav_stop();
-        return out;
-    }
-
     if (!g_state.active && !g_state.finished) {
         nav_start(input);
     }
@@ -232,11 +227,7 @@ Nav_State_t nav_get_state(void)
     return g_state;
 }
 
-void nav_input_update_from_feedback(Nav_Input_t *input,
-                                    const Ctrl_Input_t *fb,
-                                    float dt_s,
-                                    uint32_t dt_ms,
-                                    bool enabled)
+void nav_input_update_from_feedback(Nav_Input_t *input, const Ctrl_Input_t *fb)
 {
     static float yaw_rad = 0.0f;
 
@@ -244,10 +235,10 @@ void nav_input_update_from_feedback(Nav_Input_t *input,
         return;
     }
 
-    yaw_rad += fb->gyro_yaw_rate * dt_s;
+    yaw_rad += fb->gyro_yaw_rate * NAV_LOOP_DT_S;
 
     input->yaw_rad = yaw_rad;
-    input->time_ms += dt_ms;
+    input->time_ms += NAV_LOOP_DT_MS;
 
     // TODO: replace with wheel encoder odometry after encoder pins and scale are fixed.
     input->distance_m = 0.0f;
@@ -257,7 +248,6 @@ void nav_input_update_from_feedback(Nav_Input_t *input,
     input->landmark_offset = 0.0f;
     input->landmark_confidence = 0u;
     input->obstacle_close = false;
-    input->enabled = enabled;
 }
 
 void nav_apply_feedback(Ctrl_Input_t *fb, const Nav_Output_t *nav)

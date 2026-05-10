@@ -6,6 +6,9 @@
 
 #include "../../common/types.h"
 
+#define NAV_LOOP_DT_S   0.001f
+#define NAV_LOOP_DT_MS  1u
+
 typedef enum {
     NAV_ACTION_IDLE = 0,
     NAV_ACTION_GO_STRAIGHT,
@@ -38,7 +41,6 @@ typedef struct {
     float landmark_offset;
     uint8_t landmark_confidence;
     bool obstacle_close;
-    bool enabled;
 } Nav_Input_t;
 
 typedef struct {
@@ -72,11 +74,7 @@ void nav_init(const Nav_Config_t *config);
 void nav_set_route(const Nav_Segment_t *route, uint8_t route_len);
 void nav_start(const Nav_Input_t *input);
 void nav_stop(void);
-void nav_input_update_from_feedback(Nav_Input_t *input,
-                                    const Ctrl_Input_t *fb,
-                                    float dt_s,
-                                    uint32_t dt_ms,
-                                    bool enabled);
+void nav_input_update_from_feedback(Nav_Input_t *input, const Ctrl_Input_t *fb);
 Nav_Output_t nav_update(const Nav_Input_t *input);
 Nav_State_t nav_get_state(void);
 void nav_apply_feedback(Ctrl_Input_t *fb, const Nav_Output_t *nav);
