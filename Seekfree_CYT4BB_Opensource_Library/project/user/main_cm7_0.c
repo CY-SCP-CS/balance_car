@@ -2,8 +2,7 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/common/types.h"
 #include "../code/app/navigation/nav_engine.h"
-#include "../code/hmi/ui/page_debug.h"
-#include "../code/hmi/ui/page_dashboard.h"
+#include "../code/hmi/ui/ui_manager.h"
 
 static Ctrl_Input_t g_fb;
 static Nav_Input_t g_nav_input;
@@ -25,7 +24,7 @@ int main(void)
 
     nav_init(NULL);
 
-    debug_display_init();
+    ui_init(UI_PAGE_DASHBOARD);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG
 
     interrupt_global_enable(0);
 
@@ -42,7 +41,7 @@ int main(void)
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_feedback(&g_fb, &nav_out);
 
-        dashboard_update(&g_fb, &g_nav_input, &nav_out);
+        ui_update(&g_fb, &g_nav_input, &nav_out);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 

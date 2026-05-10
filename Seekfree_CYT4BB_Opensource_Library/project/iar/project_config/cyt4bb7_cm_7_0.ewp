@@ -1135,16 +1135,22 @@
             <group>
                 <name>ui</name>
                 <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_debug.c</name>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_imu_debug.c</name>
                 </file>
                 <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_debug.h</name>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_imu_debug.h</name>
                 </file>
                 <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav.c</name>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav_debug.c</name>
                 </file>
                 <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav.h</name>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav_debug.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_manager.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_manager.h</name>
                 </file>
             </group>
         </group>

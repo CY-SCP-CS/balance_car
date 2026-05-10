@@ -1,14 +1,14 @@
-#include "page_debug.h"
+#include "page_imu_debug.h"
 
 #include "seekfree_assistant.h"
 #include "../../sensors/imu/imu.h"
 
-void debug_display_init(void)
+void imu_debug_display_init(void)
 {
     seekfree_assistant_interface_init(DEBUG_DISPLAY_DEVICE);
 }
 
-void debug_display_imu(void)
+void imu_debug_display_update(void)
 {
     IMU_Debug_t d;
     imu_get_debug_data(&d);
