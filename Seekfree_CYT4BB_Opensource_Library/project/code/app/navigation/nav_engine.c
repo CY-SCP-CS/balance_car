@@ -227,15 +227,15 @@ Nav_State_t nav_get_state(void)
     return g_state;
 }
 
-void nav_input_update_from_feedback(Nav_Input_t *input, const Ctrl_Input_t *fb)
+void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
 {
     static float yaw_rad = 0.0f;
 
-    if (input == NULL || fb == NULL) {
+    if (input == NULL || ctrl == NULL) {
         return;
     }
 
-    yaw_rad += fb->gyro_yaw_rate * NAV_LOOP_DT_S;
+    yaw_rad += ctrl->gyro_yaw_rate * NAV_LOOP_DT_S;
 
     input->yaw_rad = yaw_rad;
     input->time_ms += NAV_LOOP_DT_MS;
@@ -250,12 +250,12 @@ void nav_input_update_from_feedback(Nav_Input_t *input, const Ctrl_Input_t *fb)
     input->obstacle_close = false;
 }
 
-void nav_apply_feedback(Ctrl_Input_t *fb, const Nav_Output_t *nav)
+void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)
 {
-    if (fb == NULL || nav == NULL) {
+    if (ctrl == NULL || nav == NULL) {
         return;
     }
 
-    fb->velocity_cmd = nav->velocity_cmd;
-    fb->steering_cmd = nav->steering_cmd;
+    ctrl->velocity_cmd = nav->velocity_cmd;
+    ctrl->steering_cmd = nav->steering_cmd;
 }

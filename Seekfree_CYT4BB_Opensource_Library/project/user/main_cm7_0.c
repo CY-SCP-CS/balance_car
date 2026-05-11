@@ -29,9 +29,9 @@ int main(void)
         imu_update(&g_ctrl);
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
-        nav_input_update_from_feedback(&g_nav_input, &g_ctrl);
+        nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
         Nav_Output_t nav_out = nav_update(&g_nav_input);
-        nav_apply_feedback(&g_ctrl, &nav_out);
+        nav_apply_ctrl(&g_ctrl, &nav_out);
 
         ui_update(&g_ctrl, &g_nav_input, &nav_out);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
