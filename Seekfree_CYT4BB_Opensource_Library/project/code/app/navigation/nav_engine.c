@@ -27,11 +27,11 @@ static Nav_Config_t g_cfg = {
 };
 
 static const Nav_Segment_t *g_route = g_default_route;
-static uint8_t g_route_len = NAV_DEFAULT_ROUTE_LEN;
+static uint8 g_route_len = NAV_DEFAULT_ROUTE_LEN;
 static Nav_State_t g_state;
 static float g_segment_start_distance;
 static float g_segment_start_yaw;
-static uint32_t g_segment_start_time;
+static uint32 g_segment_start_time;
 
 static float wrap_pi(float angle)
 {
@@ -52,7 +52,7 @@ static bool timeout_elapsed(const Nav_Input_t *input, const Nav_Segment_t *seg)
         return false;
     }
 
-    return (uint32_t)(input->time_ms - g_segment_start_time) >= seg->timeout_ms;
+    return (uint32)(input->time_ms - g_segment_start_time) >= seg->timeout_ms;
 }
 
 static bool landmark_seen(const Nav_Input_t *input, Nav_Landmark_t landmark)
@@ -62,7 +62,7 @@ static bool landmark_seen(const Nav_Input_t *input, Nav_Landmark_t landmark)
            input->landmark_confidence >= g_cfg.landmark_min_confidence;
 }
 
-static void enter_segment(uint8_t index, const Nav_Input_t *input)
+static void enter_segment(uint8 index, const Nav_Input_t *input)
 {
     g_state.segment_index = index;
     g_state.action = g_route[index].action;
@@ -76,7 +76,7 @@ static void enter_segment(uint8_t index, const Nav_Input_t *input)
 
 static void advance_segment(const Nav_Input_t *input)
 {
-    uint8_t next = (uint8_t)(g_state.segment_index + 1u);
+    uint8 next = (uint8)(g_state.segment_index + 1u);
 
     if (next >= g_route_len) {
         g_state.active = false;
@@ -99,7 +99,7 @@ void nav_init(const Nav_Config_t *config)
     nav_stop();
 }
 
-void nav_set_route(const Nav_Segment_t *route, uint8_t route_len)
+void nav_set_route(const Nav_Segment_t *route, uint8 route_len)
 {
     if (route == NULL || route_len == 0u) {
         g_route = g_default_route;
@@ -254,4 +254,18 @@ void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)
 
     ctrl->velocity_cmd = nav->velocity_cmd;
     ctrl->steering_cmd = nav->steering_cmd;
+}
+
+Nav_Config_t nav_get_config(void)
+{
+    return g_cfg;
+}
+
+void nav_set_config(const Nav_Config_t *config)
+{
+    if (config == NULL) {
+        return;
+    }
+
+    g_cfg = *config;
 }

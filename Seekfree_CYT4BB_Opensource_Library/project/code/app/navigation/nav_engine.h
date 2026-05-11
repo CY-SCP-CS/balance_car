@@ -1,8 +1,7 @@
 #ifndef APP_NAVIGATION_NAV_ENGINE_H
 #define APP_NAVIGATION_NAV_ENGINE_H
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "zf_common_typedef.h"
 
 #include "../../common/types.h"
 
@@ -29,17 +28,17 @@ typedef struct {
     float target_distance_m;
     float target_yaw_deg;
     float target_speed;
-    uint32_t timeout_ms;
+    uint32 timeout_ms;
     Nav_Landmark_t landmark;
 } Nav_Segment_t;
 
 typedef struct {
     float distance_m;
     float yaw_rad;
-    uint32_t time_ms;
+    uint32 time_ms;
     Nav_Landmark_t landmark;
     float landmark_offset;
-    uint8_t landmark_confidence;
+    uint8 landmark_confidence;
     bool obstacle_close;
 } Nav_Input_t;
 
@@ -50,14 +49,14 @@ typedef struct {
     float steering_limit;
     float distance_tolerance_m;
     float yaw_tolerance_rad;
-    uint8_t landmark_min_confidence;
+    uint8 landmark_min_confidence;
 } Nav_Config_t;
 
 typedef struct {
     bool active;
     bool finished;
     bool safety_stop;
-    uint8_t segment_index;
+    uint8 segment_index;
     Nav_Action_t action;
     float segment_distance_m;
     float yaw_error_rad;
@@ -70,13 +69,15 @@ typedef struct {
     bool safety_stop;
 } Nav_Output_t;
 
-void nav_init(const Nav_Config_t *config);
-void nav_set_route(const Nav_Segment_t *route, uint8_t route_len);
-void nav_start(const Nav_Input_t *input);
-void nav_stop(void);
-void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl);
-Nav_Output_t nav_update(const Nav_Input_t *input);
-Nav_State_t nav_get_state(void);
-void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav);
+void         nav_init                   (const Nav_Config_t *config);
+void         nav_set_route              (const Nav_Segment_t *route, uint8 route_len);
+void         nav_start                  (const Nav_Input_t *input);
+void         nav_stop                   (void);
+void         nav_input_update_from_ctrl (Nav_Input_t *input, const Ctrl_Input_t *ctrl);
+Nav_Output_t nav_update                 (const Nav_Input_t *input);
+Nav_State_t  nav_get_state              (void);
+void         nav_apply_ctrl             (Ctrl_Input_t *ctrl, const Nav_Output_t *nav);
+Nav_Config_t nav_get_config             (void);
+void         nav_set_config             (const Nav_Config_t *config);
 
 #endif

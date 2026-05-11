@@ -1,7 +1,5 @@
 #include "vision_pipeline.h"
 
-#include <stddef.h>
-
 #include "../../../../libraries/zf_device/zf_device_mt9v03x.h"
 #include "line_detect.h"
 #include "obstacle_detect.h"
