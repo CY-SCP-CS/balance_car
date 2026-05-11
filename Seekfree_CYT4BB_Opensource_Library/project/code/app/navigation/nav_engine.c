@@ -240,14 +240,10 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     input->yaw_rad = yaw_rad;
     input->time_ms += NAV_LOOP_DT_MS;
 
-    // TODO: replace with wheel encoder odometry after encoder pins and scale are fixed.
-    input->distance_m = 0.0f;
+    input->distance_m = 0.0f; /* wheel odometry not yet wired; stays 0 */
 
-    // TODO: feed these from cone / white circle / step detection.
-    input->landmark = NAV_LANDMARK_NONE;
-    input->landmark_offset = 0.0f;
-    input->landmark_confidence = 0u;
-    input->obstacle_close = false;
+    /* landmark / obstacle fields are populated by vision_feed_nav_input()
+       which the caller must invoke before calling nav_input_update_from_ctrl(). */
 }
 
 void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)
