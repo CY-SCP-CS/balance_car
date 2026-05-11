@@ -2,10 +2,12 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/common/types.h"
 #include "../code/app/navigation/nav_engine.h"
+#include "../code/app/vision/vision_pipeline.h"
 #include "../code/hmi/ui/ui_manager.h"
 
-static Ctrl_Input_t g_ctrl;
-static Nav_Input_t g_nav_input;
+static Ctrl_Input_t   g_ctrl;
+static Nav_Input_t    g_nav_input;
+static Vision_Result_t g_vision;
 
 int main(void)
 {
@@ -19,6 +21,7 @@ int main(void)
     }
 
     nav_init(NULL);
+    vision_init();
 
     ui_init(UI_PAGE_DASHBOARD);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG
 
@@ -28,6 +31,9 @@ int main(void)
     {
         imu_update(&g_ctrl);
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
+
+        vision_update(&g_vision);
+        vision_feed_nav_input(&g_nav_input, &g_vision);
 
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
         Nav_Output_t nav_out = nav_update(&g_nav_input);
