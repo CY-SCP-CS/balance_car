@@ -1,6 +1,7 @@
 #ifndef HMI_PAGE_REMOTE_H
 #define HMI_PAGE_REMOTE_H
 
+#include "zf_common_typedef.h"
 #include "../../common/types.h"
 #include "../../app/navigation/nav_engine.h"
 #include "../../app/vision/vision_pipeline.h"
@@ -11,7 +12,10 @@
 #define REMOTE_TARGET_PORT      "8086"
 #define REMOTE_LOCAL_PORT       "6666"
 
+#define REMOTE_PARAM_CHANNELS   8u
+
 void remote_page_init(void);
+void remote_param_bind(uint8 channel, float *target);
 void remote_page_update(const Ctrl_Input_t    *fb,
                         const Nav_Input_t     *nav_input,
                         const Nav_Output_t    *nav_output,

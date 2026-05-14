@@ -77,7 +77,8 @@ void         nav_input_update_from_ctrl (Nav_Input_t *input, const Ctrl_Input_t 
 Nav_Output_t nav_update                 (const Nav_Input_t *input);
 Nav_State_t  nav_get_state              (void);
 void         nav_apply_ctrl             (Ctrl_Input_t *ctrl, const Nav_Output_t *nav);
-Nav_Config_t nav_get_config             (void);
-void         nav_set_config             (const Nav_Config_t *config);
+Nav_Config_t  nav_get_config            (void);
+void          nav_set_config            (const Nav_Config_t *config);
+Nav_Config_t *nav_config                (void);
 
 #endif

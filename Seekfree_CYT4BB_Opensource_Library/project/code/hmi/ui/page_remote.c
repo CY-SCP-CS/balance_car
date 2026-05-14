@@ -7,17 +7,7 @@
 
 #define RAD_TO_DEG  (180.0f / 3.14159265f)
 
-/* Parameter channel mapping (upper computer -> nav config)
- * Ch 0 : yaw_kp
- * Ch 1 : turn_kp
- * Ch 2 : landmark_kp
- * Ch 3 : steering_limit
- */
-#define REMOTE_PARAM_YAW_KP         0u
-#define REMOTE_PARAM_TURN_KP        1u
-#define REMOTE_PARAM_LANDMARK_KP    2u
-#define REMOTE_PARAM_STEERING_LIMIT 3u
-#define REMOTE_PARAM_COUNT          4u
+static float *g_bindings[REMOTE_PARAM_CHANNELS];
 
 void remote_page_init(void)
 {
@@ -33,33 +23,23 @@ void remote_page_init(void)
         MT9V03X_H);
 }
 
+void remote_param_bind(uint8 channel, float *target)
+{
+    if (channel < REMOTE_PARAM_CHANNELS) {
+        g_bindings[channel] = target;
+    }
+}
+
 static void apply_remote_params(void)
 {
     seekfree_assistant_data_analysis();
 
-    uint8 dirty = 0u;
-    Nav_Config_t cfg = nav_get_config();
-
-    for (uint8 i = 0u; i < REMOTE_PARAM_COUNT; i++) {
-        if (!seekfree_assistant_parameter_update_flag[i]) {
+    for (uint8 i = 0u; i < REMOTE_PARAM_CHANNELS; i++) {
+        if (!seekfree_assistant_parameter_update_flag[i] || g_bindings[i] == NULL) {
             continue;
         }
         seekfree_assistant_parameter_update_flag[i] = 0u;
-        dirty = 1u;
-
-        float val = seekfree_assistant_parameter[i];
-
-        switch (i) {
-        case REMOTE_PARAM_YAW_KP:         cfg.yaw_kp         = val; break;
-        case REMOTE_PARAM_TURN_KP:        cfg.turn_kp        = val; break;
-        case REMOTE_PARAM_LANDMARK_KP:    cfg.landmark_kp    = val; break;
-        case REMOTE_PARAM_STEERING_LIMIT: cfg.steering_limit = val; break;
-        default: break;
-        }
-    }
-
-    if (dirty) {
-        nav_set_config(&cfg);
+        *g_bindings[i] = seekfree_assistant_parameter[i];
     }
 }
 

@@ -269,3 +269,8 @@ void nav_set_config(const Nav_Config_t *config)
 
     g_cfg = *config;
 }
+
+Nav_Config_t *nav_config(void)
+{
+    return &g_cfg;
+}
