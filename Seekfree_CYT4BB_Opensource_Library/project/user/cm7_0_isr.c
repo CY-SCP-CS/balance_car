@@ -58,7 +58,6 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
 
     control_task();
 
-    /* 将轮子 PWM 发送到驱动器 */
     small_driver_set_duty(&small_driver_value,
         g_motor_cmd.left_motor_pwm,
         g_motor_cmd.right_motor_pwm);
@@ -217,6 +216,7 @@ void uart4_isr (void)
     if(uart_isr_mask(UART_4))            // ����4�����ж�
     {
         small_driver_control_callback(&small_driver_value);
+        uart_receiver_handler();   
     }
     else                                // ����4�����ж�
     {

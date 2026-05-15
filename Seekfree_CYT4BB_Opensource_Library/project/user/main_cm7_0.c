@@ -36,14 +36,13 @@ int main(void)
     small_driver_uart_init();
     robot_control_init();
 
-    /* å¯åŠ¨ PIT_CH1 1ms æ§åˆ¶å‘¨æœŸ (control_task åœ¨è¯¥ä¸­æ–­ä¸­æ‰§è¡Œ) */
     pit_ms_init(PIT_CH1, 1);
 
     interrupt_global_enable(0);
 
     while(true)
     {
-        imu_update(&g_ctrl);
+        imu_update(&g_ctrl);//¿ÉÒÔµÄ»°·Åµ½¿ØÖÆÖĞ¶ÏÀïÃæ
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
         vision_update(&g_vision);

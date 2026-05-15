@@ -28,6 +28,7 @@ void imu_update(Ctrl_Input_t *fb)
     // 安装方向不同时修改 imu660rc_gyro_x/y/z 的对应关系
     fb->gyro_pitch_rate = imu660rc_gyro_transition(imu660rc_gyro_y) * DEG_TO_RAD;
     fb->gyro_yaw_rate   = imu660rc_gyro_transition(imu660rc_gyro_z) * DEG_TO_RAD;
+    fb->gyro_roll_rate  = imu660rc_gyro_transition(imu660rc_gyro_x) * DEG_TO_RAD;
 }
 
 void imu_get_debug_data(IMU_Debug_t *out)

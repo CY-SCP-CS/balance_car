@@ -16,7 +16,7 @@ void dashboard_update(const Ctrl_Input_t *fb,
     seekfree_assistant_oscilloscope_data.data[1] =
         fb != 0 ? fb->body_roll * DASHBOARD_RAD_TO_DEG : 0.0f;
     seekfree_assistant_oscilloscope_data.data[2] =
-        fb != 0 ? fb->gyro_pitch_rate * DASHBOARD_RAD_TO_DEG : 0.0f;
+        fb != 0 ? fb->gyro_roll_rate * DASHBOARD_RAD_TO_DEG : 0.0f;
     seekfree_assistant_oscilloscope_data.data[3] =
         nav_output != 0 ? nav_output->velocity_cmd : 0.0f;
     seekfree_assistant_oscilloscope_data.data[4] =

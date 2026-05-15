@@ -8,6 +8,7 @@ typedef struct
 
     float gyro_yaw;
     float gyro_pitch;
+    float gyro_roll;
 
     float angle_pitch;
     float angle_yaw;

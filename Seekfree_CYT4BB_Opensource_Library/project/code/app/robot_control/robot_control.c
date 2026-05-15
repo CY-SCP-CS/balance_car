@@ -13,27 +13,25 @@ static Foot_position_t foot_position_right;
 
 static VMC_Config_t vmc_config;
 
-static PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_left_pid, g_speed_right_pid;
+static PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_speed_right_pid;
 
 void robot_control_init(void){
 
-    pid_init(&g_pitch_angle_pid, 0.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 100.0f, 100.0f);
-    pid_init(&g_pitch_gyro_pid, 0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 100.0f, 100.0f);
-    pid_init(&g_speed_left_pid, 0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
-    pid_init(&g_speed_right_pid, 0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
+    pid_init(&g_pitch_angle_pid, 1.5f, 0.0f, 0.8f, ROBOT_CONTROL_DT, 10.0f, 0.0f);
+    pid_init(&g_pitch_gyro_pid,  200.0f, 0.0f, 0.10f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
+    pid_init(&g_speed_pid,  0.005f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 0.25f, 0.1f);
+    pid_init(&g_speed_right_pid, 15.5f, 0.0f, 0.05f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
 
-    vmc_config.kp = 500.0f;   /* 虚拟刚度 */
-    vmc_config.kd = 15.0f;    /* 虚拟阻尼 */
+    vmc_config.kp = 500.0f; 
+    vmc_config.kd = 15.0f;   
 
-    /* 远程调参绑定 — 上位机 Ch 0~7 直接修改这些变量的值 */
     remote_param_bind(0, &g_pitch_angle_pid.kp);
     remote_param_bind(1, &g_pitch_gyro_pid.kp);
     remote_param_bind(2, &g_pitch_gyro_pid.kd);
-    remote_param_bind(3, &g_speed_left_pid.kp);
+    remote_param_bind(3, &g_speed_pid.kp);
     remote_param_bind(4, &g_speed_right_pid.kp);
     remote_param_bind(5, &vmc_config.kp);
-    remote_param_bind(6, &vmc_config.kd);
-    remote_param_bind(7, &nav_config()->yaw_kp);
+    remote_param_bind(6, &g_pitch_angle_pid.kd);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -53,8 +51,8 @@ void control_task(void){
     Move_cmd_t     cmd_local   = g_move_cmd;
 
     /* 1. 车体平衡控制 —— 驱动轮 PWM */
-    pitch_balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid,
-        &g_speed_left_pid, &g_speed_right_pid, &g_motor_cmd);
+    pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
+        &g_pitch_gyro_pid, &g_motor_cmd);
 
     /* 2. 腿部运动规划 —— 足端目标位置 */
     leg_cmd_solve(&cmd_local, &foot_position_left,
@@ -96,6 +94,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->angle_yaw      = 0.0f;                     /* 无绝对偏航参考 */
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
+    sensor->gyro_roll      = ctrl->gyro_roll_rate;
     sensor->accel_z        = 0.0f;                  
 
     sensor->motor_left_speed  = (float)small_driver_value.receive_left_speed_data * RPM_TO_RADPS;
