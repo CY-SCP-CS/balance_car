@@ -31,7 +31,7 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-    ui_init(UI_PAGE_DASHBOARD);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
+    ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
 
     small_driver_uart_init();
     robot_control_init();

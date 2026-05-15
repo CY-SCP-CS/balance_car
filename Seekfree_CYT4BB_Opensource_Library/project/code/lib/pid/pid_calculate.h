@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /* 微分项一阶低通滤波系数 (0~1), 越大滤波越弱 */
-#define PID_D_LPF_ALPHA     0.15f
+#define PID_D_LPF_ALPHA     0.05f
 
 typedef struct
 {

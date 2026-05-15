@@ -7,7 +7,7 @@
 // ===== 模式选择 =====
 // 1: INT2 引脚已连接 → 四元数融合 + EXTI 中断驱动（精度高，延迟低）
 // 0: INT2 引脚未连接 → 陀螺仪+加速度计轮询 + 互补滤波（占用 PIT_CH0 @ 1ms）
-#define IMU_INT2_ENABLED    0
+#define IMU_INT2_ENABLED    1
 
 // ===== 轮询模式参数（IMU_INT2_ENABLED = 0 时生效）=====
 // 必须与 PIT_CH0 的初始化周期一致

@@ -17,9 +17,9 @@ static PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_spee
 
 void robot_control_init(void){
 
-    pid_init(&g_pitch_angle_pid, 1.5f, 0.0f, 0.8f, ROBOT_CONTROL_DT, 10.0f, 0.0f);
-    pid_init(&g_pitch_gyro_pid,  200.0f, 0.0f, 0.10f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,  0.005f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 0.25f, 0.1f);
+    pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
+    pid_init(&g_pitch_gyro_pid,  -1170.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
+    pid_init(&g_speed_pid,       -0.4f, -0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 500.0f);
     pid_init(&g_speed_right_pid, 15.5f, 0.0f, 0.05f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
 
     vmc_config.kp = 500.0f; 

@@ -60,7 +60,7 @@ void remote_page_update(const Ctrl_Input_t    *fb,
     seekfree_assistant_oscilloscope_data.data[1] =
         fb != NULL ? fb->body_roll * RAD_TO_DEG : 0.0f;
     seekfree_assistant_oscilloscope_data.data[2] =
-        nav_output != NULL ? nav_output->steering_cmd : 0.0f;
+        fb != NULL ? fb->gyro_pitch_rate : 0.0f;
     seekfree_assistant_oscilloscope_data.data[3] =
         nav_output != NULL ? nav_output->velocity_cmd : 0.0f;
     seekfree_assistant_oscilloscope_data.data[4] =
