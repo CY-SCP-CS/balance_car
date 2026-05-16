@@ -73,6 +73,16 @@ typedef struct
 #define LEG_LENGTH_STANDARD     20.0f   /* 标准腿长（mm） */
 #define LEG_WHEEL_RADIUS        20.0f   /* 轮子半径（mm） */
 
+/* 物理参数 —— 用于 LQR 增益调度 */
+#define ROBOT_BODY_MASS         2.5f    /* kg - 车体质量（不含轮） */
+#define ROBOT_WHEEL_MASS        0.1f    /* kg - 单个轮质量 */
+#define ROBOT_BODY_INERTIA      0.015f  /* kg*m^2 - 车体俯仰惯量 */
+#define ROBOT_WHEEL_INERTIA     0.0001f /* kg*m^2 - 轮惯量 */
+#define ROBOT_COM_OFFSET        0.025f  /* m - 髋关节到 COM 垂直距离 */
+#define ROBOT_GRAVITY           9.81f   /* m/s^2 */
+#define LEG_LENGTH_MIN_MM       50.0f   /* mm */
+#define LEG_LENGTH_MAX_MM       220.0f  /* mm */
+
 /* 单位转换常量 */
 #define RPM_TO_RADPS            0.104719755f    /* RPM → rad/s: 2π/60 */
 

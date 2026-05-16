@@ -1210,6 +1210,12 @@
             <group>
                 <name>balance</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\control\balance\lqr_balance.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\balance\lqr_balance.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\control\balance\pitch_balance.c</name>
                 </file>
                 <file>
