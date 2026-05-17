@@ -4,10 +4,18 @@
 #include "../code/app/navigation/nav_engine.h"
 #include "../code/app/vision/vision_pipeline.h"
 #include "../code/hmi/ui/ui_manager.h"
+#include "../code/app/robot_control/robot_control.h"
+#include "../code/app/robot_control/small_driver_uart_control.h"
 
 static Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
 static Vision_Result_t g_vision;
+
+Motor_cmd_duty_t g_motor_cmd;
+
+Sensor_data_t g_sensor_data;
+
+Move_cmd_t g_move_cmd;
 
 int main(void)
 {
@@ -23,13 +31,18 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-    ui_init(UI_PAGE_DASHBOARD);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
+    ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
+
+    small_driver_uart_init();
+    robot_control_init();
+
+    pit_ms_init(PIT_CH1, 1);
 
     interrupt_global_enable(0);
 
     while(true)
     {
-        imu_update(&g_ctrl);
+        imu_update(&g_ctrl);//可以的话放到控制中断里面
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
         vision_update(&g_vision);
@@ -39,6 +52,7 @@ int main(void)
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
+        sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop

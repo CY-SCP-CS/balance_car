@@ -38,6 +38,8 @@
 
 #include "zf_common_headfile.h"
 #include "../code/sensors/imu/imu.h"
+#include "../code/app/robot_control/robot_control.h"
+#include "../code/app/robot_control/small_driver_uart_control.h"
 
 
 // **************************** PIT�жϺ��� ****************************
@@ -50,10 +52,15 @@ void pit0_ch0_isr()                     // ��ʱ��ͨ�� 0 ����
 #endif
 }
 
-void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 �����жϷ�����      
+void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 �����жϷ�����      (1ms ������)
 {
     pit_isr_flag_clear(PIT_CH1);
-    
+
+    control_task();
+
+    small_driver_set_duty(&small_driver_value,
+        g_motor_cmd.left_motor_pwm,
+        g_motor_cmd.right_motor_pwm);
 }
 
 void pit0_ch2_isr()                     // ��ʱ��ͨ�� 2 �����жϷ�����      
@@ -208,15 +215,14 @@ void uart4_isr (void)
 {
     if(uart_isr_mask(UART_4))            // ����4�����ж�
     {
-
-        uart_receiver_handler();                                                                // ���ڽ��ջ��ص�����
-       
+        small_driver_control_callback(&small_driver_value);
+        uart_receiver_handler();   
     }
     else                                // ����4�����ж�
     {
-      
-        
-        
+
+
+
     }
 }
 

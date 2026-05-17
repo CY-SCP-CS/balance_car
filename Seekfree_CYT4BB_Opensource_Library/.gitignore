@@ -1,0 +1,60 @@
+# ========================
+# IAR Embedded Workbench
+# ========================
+
+# Build output directories
+project/iar/Debug*/
+project/iar/Release*/
+
+# Executable / hex / debug output files
+*.hex
+*.out
+*.sim
+*.bin
+*.elf
+*.map
+*.mot
+*.srec
+
+# Object and library files
+*.o
+*.obj
+*.lib
+*.a
+
+# IAR browse info
+*.pbi
+*.pbi.dep
+*.pbd
+*.pbw
+*.xcl
+
+# IAR build cache
+*_build_cache
+*.ninja
+*.ninja_deps
+*.ninja_log
+
+# IAR workspace / settings (user-specific)
+project/iar/settings/
+project/iar/project_config/settings/
+
+# IAR backup files
+*.bak
+*.dep
+
+# ========================
+# IDE / Editor
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========================
+# Build system temporaries
+# ========================
+*.tmp
+*.temp
+*.log
