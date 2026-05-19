@@ -104,8 +104,8 @@ void control_task(void){
         angles_cur.right_motor_angle = -sensor_local.joint_left_back_angle;   /* 补偿 RIGHT_MOTOR_DIR = -1 */
 
         Foot_position_t left_target;
-        left_target.x = left_zero_angle.x + foot_position_left.x;
-        left_target.y = left_zero_angle.y + foot_position_left.y;
+        left_target.x = left_zero_angle.x + 0.0f;//foot_position_left.x;
+        left_target.y = left_zero_angle.y - 120.0f;
 
         vmc_calculate(&vmc_config, &left_target,
             &angles_cur,
@@ -158,6 +158,11 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->joint_left_back_speed   = ctrl->motor_vel_bl;
     sensor->joint_right_front_speed = ctrl->motor_vel_fr;
     sensor->joint_right_back_speed  = ctrl->motor_vel_br;
+
+    /* --- 应用标定偏移（标定完成后，将原始编码器角度转为相对限位的角度） --- */
+    if (angle_offset_is_done()) {
+        angle_offset_apply_to_sensor(sensor);
+    }
 
     /* --- 运动指令桥接 --- */
     cmd->target_speed  = 0.0f;//ctrl->velocity_cmd;

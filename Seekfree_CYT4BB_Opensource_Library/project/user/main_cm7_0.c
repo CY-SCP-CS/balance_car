@@ -32,7 +32,7 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-    ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
+   // ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
 
     small_driver_uart_init();
     robot_control_init();
@@ -56,6 +56,7 @@ int main(void)
 
     while(true)
     {
+      printf(" angle: %f\r\n", g_sensor_data.joint_left_front_angle);
         imu_update(&g_ctrl);//���ԵĻ��ŵ������ж�����
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
@@ -67,7 +68,7 @@ int main(void)
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
-        ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
+        //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 

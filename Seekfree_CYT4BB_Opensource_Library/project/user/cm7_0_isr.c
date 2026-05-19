@@ -68,7 +68,7 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
         small_driver_set_duty(&small_driver_value, 0, 0);
     } else if (!angle_offset_is_done()) {
 
-        small_driver_get_location(&small_driver_value);
+        /* 标定逻辑在 ISR 中以 1ms 周期运行（依赖其内部 timeout/stall 计数） */
         angle_offset_process(&g_sensor_data, &g_motor_cmd);
         small_driver_set_duty(&small_driver_value,
             -g_motor_cmd.left_front_joint_pwm,
