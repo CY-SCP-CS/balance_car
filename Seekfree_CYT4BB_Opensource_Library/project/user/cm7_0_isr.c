@@ -78,8 +78,8 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
         control_task();
 
         small_driver_set_duty(&small_driver_value,
-            g_motor_cmd.left_front_joint_pwm,
-            g_motor_cmd.left_back_joint_pwm);
+            -g_motor_cmd.left_front_joint_pwm,
+            -g_motor_cmd.left_back_joint_pwm);
     }
 }
 

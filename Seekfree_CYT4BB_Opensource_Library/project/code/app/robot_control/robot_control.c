@@ -5,8 +5,9 @@
 #include "../../hmi/ui/page_remote.h"
 #include "../navigation/nav_engine.h"
 #include "../../control/leg/angle_offset.h"
+#include "../../control/leg/kinematics.h"
 
-
+#define M_PI 3.1415926f
 
 static Foot_position_t foot_position_left;
 
@@ -28,8 +29,8 @@ void robot_control_init(void){
     pid_init(&g_leg_speed_pid, 30.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, 30.0f, 10.0f);
     pid_init(&g_leg_roll_pid,   1.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
-    vmc_config.kp = 0.2f; 
-    vmc_config.kd = 0.0f;   
+    vmc_config.kp = 0.14f;
+    vmc_config.kd = 0.0005f;   
 
     remote_param_bind(0, &g_pitch_angle_pid.kp);
     remote_param_bind(1, &g_pitch_gyro_pid.kp);
@@ -104,8 +105,8 @@ void control_task(void){
         angles_cur.right_motor_angle = -sensor_local.joint_left_back_angle;   /* 补偿 RIGHT_MOTOR_DIR = -1 */
 
         Foot_position_t left_target;
-        left_target.x = left_zero_angle.x + 0.0f;//foot_position_left.x;
-        left_target.y = left_zero_angle.y - 120.0f;
+        left_target.x = 0.0f;       /* 目标居中：足端位于两电机正下方 */
+        left_target.y = 200.0f;     /* 目标向下伸展至 y = 200mm */
 
         vmc_calculate(&vmc_config, &left_target,
             &angles_cur,
