@@ -1225,6 +1225,12 @@
             <group>
                 <name>leg</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\angle_offset.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\angle_offset.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\jacobian.c</name>
                 </file>
                 <file>

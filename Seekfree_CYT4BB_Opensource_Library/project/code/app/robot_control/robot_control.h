@@ -5,6 +5,7 @@
 #include "../../control/leg/vmc_calculate.h"
 #include "../../control/balance/pitch_balance.h"
 
+#define DEG_TO_RAD (3.1415926f / 180.0f)
 
 extern Motor_cmd_duty_t g_motor_cmd;
 

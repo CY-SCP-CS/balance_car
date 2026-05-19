@@ -6,6 +6,7 @@
 #include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/control/leg/angle_offset.h"
 
 static Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
@@ -36,13 +37,26 @@ int main(void)
     small_driver_uart_init();
     robot_control_init();
 
+    angle_offset_start_leg(LEG_LEFT, NULL);//è°ƒè¯•ç”¨ï¼Œæ­£å¼ä½¿ç”¨æ—¶æ”¹ä¸º angle_offset_start(NULL);
+
     pit_ms_init(PIT_CH1, 1);
 
     interrupt_global_enable(0);
 
+    while (!angle_offset_is_done()) {
+        imu_update(&g_ctrl);
+        sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+
+        if (angle_offset_has_fault()) {
+            zf_log(0, "Angle calibration FAILED (timeout). Halting.");
+            while (true);
+        }
+    }
+    zf_log(0, "Angle calibration OK.");
+
     while(true)
     {
-        imu_update(&g_ctrl);//¿ÉÒÔµÄ»°·Åµ½¿ØÖÆÖĞ¶ÏÀïÃæ
+        imu_update(&g_ctrl);//ï¿½ï¿½ï¿½ÔµÄ»ï¿½ï¿½Åµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¶ï¿½ï¿½ï¿½ï¿½ï¿½
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
         vision_update(&g_vision);

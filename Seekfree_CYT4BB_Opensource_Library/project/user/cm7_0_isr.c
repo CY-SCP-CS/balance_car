@@ -40,6 +40,7 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/control/leg/angle_offset.h"
 
 
 // **************************** PIT�жϺ��� ****************************
@@ -56,11 +57,30 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
 {
     pit_isr_flag_clear(PIT_CH1);
 
-    control_task();
+    if (angle_offset_has_fault()) {
 
-    small_driver_set_duty(&small_driver_value,
-        g_motor_cmd.left_motor_pwm,
-        g_motor_cmd.right_motor_pwm);
+        g_motor_cmd.left_motor_pwm      = 0;
+        g_motor_cmd.right_motor_pwm     = 0;
+        g_motor_cmd.left_front_joint_pwm  = 0;
+        g_motor_cmd.left_back_joint_pwm   = 0;
+        g_motor_cmd.right_front_joint_pwm = 0;
+        g_motor_cmd.right_back_joint_pwm  = 0;
+        small_driver_set_duty(&small_driver_value, 0, 0);
+    } else if (!angle_offset_is_done()) {
+
+        small_driver_get_location(&small_driver_value);
+        angle_offset_process(&g_sensor_data, &g_motor_cmd);
+        small_driver_set_duty(&small_driver_value,
+            -g_motor_cmd.left_front_joint_pwm,
+            -g_motor_cmd.left_back_joint_pwm);
+    } else {
+
+        control_task();
+
+        small_driver_set_duty(&small_driver_value,
+            g_motor_cmd.left_front_joint_pwm,
+            g_motor_cmd.left_back_joint_pwm);
+    }
 }
 
 void pit0_ch2_isr()                     // ��ʱ��ͨ�� 2 �����жϷ�����      
