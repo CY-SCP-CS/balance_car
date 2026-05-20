@@ -53,6 +53,10 @@ void command_update(const Move_cmd_t *cmd){
 
 /*---------------------------------------------------------------------------*/
 void control_task(void){
+    /* ── 限位偏置：标定后 sensor=0 处电机在运动学中的实际角度 ── */
+    /* "V形向上": LF 指向右上方(~-1.2 rad), LB 指向左上方(~-2.0 rad) */
+    #define LF_LIMIT_BIAS  (-1.2f)
+    #define LB_LIMIT_BIAS  (-2.0f)
 
     Sensor_data_t sensor_local = g_sensor_data;
     Move_cmd_t     cmd_local   = g_move_cmd;
@@ -61,8 +65,8 @@ void control_task(void){
     static bool zero_angle_set_complete = false;
     if (!zero_angle_set_complete) {
         Joint_angle_t joint_zero_angle;
-        joint_zero_angle.left_motor_angle  = sensor_local.joint_left_front_angle;
-        joint_zero_angle.right_motor_angle = -sensor_local.joint_left_back_angle;
+        joint_zero_angle.left_motor_angle  = sensor_local.joint_left_front_angle + LF_LIMIT_BIAS;
+        joint_zero_angle.right_motor_angle = -sensor_local.joint_left_back_angle + LB_LIMIT_BIAS;
         five_bar_forward(&joint_zero_angle, &left_zero_angle);
 
         joint_zero_angle.left_motor_angle  = sensor_local.joint_right_front_angle;
@@ -101,8 +105,8 @@ void control_task(void){
     /* 4. 左腿 VMC — 目标 = 基准足端 + 命令偏移 */
     {
         Joint_angle_t angles_cur;
-        angles_cur.left_motor_angle  = sensor_local.joint_left_front_angle;
-        angles_cur.right_motor_angle = -sensor_local.joint_left_back_angle;   /* 补偿 RIGHT_MOTOR_DIR = -1 */
+        angles_cur.left_motor_angle  = sensor_local.joint_left_front_angle + LF_LIMIT_BIAS;
+        angles_cur.right_motor_angle = -sensor_local.joint_left_back_angle + LB_LIMIT_BIAS;
 
         Foot_position_t left_target;
         left_target.x = 0.0f;       /* 目标居中：足端位于两电机正下方 */
@@ -160,7 +164,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->joint_right_front_speed = ctrl->motor_vel_fr;
     sensor->joint_right_back_speed  = ctrl->motor_vel_br;
 
-    /* --- 应用标定偏移（标定完成后，将原始编码器角度转为相对限位的角度） --- */
+    /* --- 标定偏移：将增量编码器的读数转为"相对限位"的角度 --- */
     if (angle_offset_is_done()) {
         angle_offset_apply_to_sensor(sensor);
     }
