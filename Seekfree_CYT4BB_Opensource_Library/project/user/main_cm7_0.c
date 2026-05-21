@@ -56,7 +56,7 @@ int main(void)
 
     while(true)
     {
-      printf(" angle: %f\r\n", g_sensor_data.joint_left_front_angle);
+
         imu_update(&g_ctrl);//���ԵĻ��ŵ������ж�����
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
