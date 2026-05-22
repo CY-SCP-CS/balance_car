@@ -6,6 +6,7 @@
 #include "../navigation/nav_engine.h"
 #include "../../control/leg/angle_offset.h"
 #include "../../control/leg/leg_pid_control.h"
+#include "../../control/leg/leg_vmc_control.h"
 #include "../../control/leg/kinematics.h"
 #include "../../control/leg/jacobian.h"
 #include <math.h>
@@ -17,11 +18,21 @@ static Foot_position_t foot_position_left;
 
 static Foot_position_t foot_position_right;
 
+/* ─── 控制模式选择 ───
+ *  USE_VMC = 0 : 当前 PID 方案 (默认)
+ *  USE_VMC = 1 : 修复后的 VMC 方案 (需现场调参)
+ */
+#define USE_VMC 0
+
 /* 腿部关节 PID 控制器 */
 static Leg_PID_t g_leg_left_pid, g_leg_right_pid;
 
 /* 腿部关节目标角度 (相对限位的偏移量, rad) */
 static Leg_Target_t g_leg_target_left, g_leg_target_right;
+
+#if USE_VMC
+static VMC_Config_t g_vmc_config;
+#endif
 
 static PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_speed_right_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
@@ -48,6 +59,11 @@ void robot_control_init(void){
     leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 0.0f, 10000.0f, 0.0f);
     leg_pid_init(&g_leg_right_pid, 1500.0f, 0.0f, 0.0f, 10000.0f, 0.0f);
 
+#if USE_VMC
+    g_vmc_config.kp = 0.3f;
+    g_vmc_config.kd = 0.001f;
+#endif
+
     //初始偏移，根据实际情况改一下重心
     g_leg_target_left.front  = 0.4f;
     g_leg_target_left.back   = -0.4f;
@@ -61,6 +77,11 @@ void robot_control_init(void){
     remote_param_bind(4, &g_speed_right_pid.kp);
     remote_param_bind(5, &g_leg_left_pid.front.kp);
     remote_param_bind(6, &g_leg_roll_pid.kp);
+
+#if USE_VMC
+    remote_param_bind(7, &g_vmc_config.kp);
+    remote_param_bind(8, &g_vmc_config.kd);
+#endif
 
 }
 
@@ -88,6 +109,12 @@ void control_task(void){
         &foot_position_left, &foot_position_right);
 
     //腿的控制
+#if USE_VMC
+    /* ── VMC 方案（修复了角度偏置/符号/目标计算） ── */
+    leg_vmc_control(&g_vmc_config, &sensor_local,
+                    &foot_position_left, &foot_position_right,
+                    &g_motor_cmd);
+#else
     /* ---- 左腿 ---- */
     {
         Joint_angle_t abs_nominal;      /* 标称位形对应的绝对角度 */
@@ -136,6 +163,7 @@ void control_task(void){
 
     leg_pid_control(&g_leg_right_pid, &g_leg_target_right,
                     &sensor_local, LEG_RIGHT, &g_motor_cmd);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
