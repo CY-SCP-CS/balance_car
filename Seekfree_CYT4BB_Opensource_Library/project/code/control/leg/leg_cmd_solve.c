@@ -25,7 +25,7 @@ void leg_cmd_solve(const Move_cmd_t *move_cmd,
     x_target          = CLAMP(x_target, -FOOT_X_OFFSET_MAX, FOOT_X_OFFSET_MAX);
 
     foot_position_left->x  = x_target;
-    foot_position_right->x = x_target;
+    foot_position_right->x = -x_target;
 
     float roll_norm   = sensor->angle_roll / ROLL_MAX_RAD;
     float roll_output = pid_calculate(pid_leg_roll, move_cmd->target_roll, roll_norm);

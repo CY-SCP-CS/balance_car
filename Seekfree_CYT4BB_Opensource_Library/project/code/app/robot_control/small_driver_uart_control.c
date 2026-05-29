@@ -245,7 +245,7 @@ void small_driver_uart_init(void)
     /* ── 右腿关节电机 (UART3) ── */
     memset(&small_driver_value_leg_right, 0, sizeof(small_driver_value_leg_right));
     small_driver_value_leg_right.driver_uart       = SMALL_DRIVER_UART_LEG_RIGHT;
-    small_driver_value_leg_right.left_motor_dir    = -1;      /* RF 标定方向与 LF 相反, motor_dir 补偿编码器符号 */
+    small_driver_value_leg_right.left_motor_dir    = 1;       /* 右前关节方向（与左前一致） */
     small_driver_value_leg_right.right_motor_dir   = 1;       /* 右后关节方向 */
 
     uart_init(SMALL_DRIVER_UART_LEG_RIGHT, SMALL_DRIVER_LEG_RIGHT_BAUDRATE, SMALL_DRIVER_LEG_RIGHT_TX, SMALL_DRIVER_LEG_RIGHT_RX);

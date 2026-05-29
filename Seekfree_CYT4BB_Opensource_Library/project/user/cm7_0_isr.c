@@ -89,10 +89,8 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
         small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
             -g_motor_cmd.left_back_joint_pwm);
-        /* RF: 标定零位在正向极限(+600), 前伸需-PWM, -pwm_front直接给出正确方向, 不取反 */
-        /* RB: 标定零位在正向极限(+600), 前伸需-PWM, -(-pwm_back)=pwm_back给出正确方向 */
         small_driver_set_duty(&small_driver_value_leg_right,
-            g_motor_cmd.right_front_joint_pwm,
+            -g_motor_cmd.right_front_joint_pwm,
             -g_motor_cmd.right_back_joint_pwm);
     }
 }
