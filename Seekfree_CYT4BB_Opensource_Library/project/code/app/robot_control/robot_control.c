@@ -1,5 +1,6 @@
 #include "robot_control.h"
 #include "small_driver_uart_control.h"
+#include "jump.h"
 #include "../../lib/pid/pid_calculate.h"
 #include "../../common/types.h"
 #include "../../hmi/ui/page_remote.h"
@@ -34,16 +35,17 @@ static Leg_Target_t g_leg_target_left, g_leg_target_right;
 static VMC_Config_t g_vmc_config;
 #endif
 
-static PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_speed_right_pid;
+PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_speed_right_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
-#define LEG_NOM_FRONT_L     0.5f
-#define LEG_NOM_BACK_L     -0.5f
-#define LEG_NOM_FRONT_R    -0.5f
-#define LEG_NOM_BACK_R      0.5f
+#define LEG_NOM_FRONT_L     1.0f
+#define LEG_NOM_BACK_L     -1.0f
+#define LEG_NOM_FRONT_R    1.0f
+#define LEG_NOM_BACK_R     -1.0f
 
-/* 右腿绝对角度转换符号：镜像安装, 传感器 CW 使绝对角减小 */
-#define RIGHT_ABS_FRONT_SIGN  -1.0f
-#define RIGHT_ABS_BACK_SIGN   -1.0f
+/* 右腿与左腿编码器符号一致 */
+#define RIGHT_ABS_FRONT_SIGN  1.0f
+#define RIGHT_ABS_BACK_SIGN   1.0f
+
 
 void robot_control_init(void){
     //pitch的PID
@@ -56,19 +58,19 @@ void robot_control_init(void){
     pid_init(&g_leg_roll_pid,  10.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
-    leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 0.0f, 10000.0f, 0.0f);
-    leg_pid_init(&g_leg_right_pid, 1500.0f, 0.0f, 0.0f, 10000.0f, 0.0f);
+    leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
+    leg_pid_init(&g_leg_right_pid, 1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
 
 #if USE_VMC
-    g_vmc_config.kp = 0.3f;
-    g_vmc_config.kd = 0.001f;
+    g_vmc_config.kp = 0.25f;
+    g_vmc_config.kd = 0.0000f;
 #endif
 
     //初始偏移，根据实际情况改一下重心
     g_leg_target_left.front  = 0.4f;
     g_leg_target_left.back   = -0.4f;
-    g_leg_target_right.front = 0.0f;
-    g_leg_target_right.back  = 0.0f;
+    g_leg_target_right.front = 0.4f;
+    g_leg_target_right.back  = -0.4f;
 
     remote_param_bind(0, &g_pitch_angle_pid.kp);
     remote_param_bind(1, &g_pitch_gyro_pid.kp);
@@ -83,6 +85,8 @@ void robot_control_init(void){
     remote_param_bind(8, &g_vmc_config.kd);
 #endif
 
+    jump_init();
+
 }
 
 /*---------------------------------------------------------------------------*/
@@ -96,9 +100,21 @@ void command_update(const Move_cmd_t *cmd){
 }
 
 /*---------------------------------------------------------------------------*/
+void robot_control_reset_balance_pid(void){
+    pid_reset(&g_pitch_angle_pid);
+    pid_reset(&g_pitch_gyro_pid);
+    pid_reset(&g_speed_pid);
+}
+
+/*---------------------------------------------------------------------------*/
 void control_task(void){
     Sensor_data_t sensor_local = g_sensor_data;
     Move_cmd_t     cmd_local   = g_move_cmd;
+
+    if (jump_is_active()) {
+        jump_control(&sensor_local, &g_motor_cmd);
+        return;
+    }
 
     //pitch平衡环
     pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
@@ -170,29 +186,48 @@ void control_task(void){
 void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd_t *cmd){
 
     /* --- 传感器数据桥接 --- */
-    sensor->angle_pitch    = ctrl->body_pitch;
-    sensor->angle_roll     = ctrl->body_roll;
+    sensor->angle_pitch    = ctrl->body_roll;
+    sensor->angle_roll     = ctrl->body_pitch;
     sensor->angle_yaw      = 0.0f;                     /* 无绝对偏航参考 */
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
     sensor->gyro_roll      = ctrl->gyro_roll_rate;
     sensor->accel_z        = 0.0f;
-    //多个板子的话要加入两个small_driver_value，具体引脚还没确定
+    //驱动轮速度 (UART4) 和关节角度 (UART6 左腿, UART3 右腿)
     sensor->motor_left_speed  = (float)small_driver_value.receive_left_speed_data * RPM_TO_RADPS;
-    sensor->motor_right_speed = (float)small_driver_value.receive_right_speed_data * RPM_TO_RADPS;
+    sensor->motor_right_speed = (float)small_driver_value.receive_right_speed_data * RPM_TO_RADPS * RIGHT_MOTOR_DIR;
 
-    sensor->joint_left_front_angle  = (float)small_driver_value.receive_left_location_data * DEG_TO_RAD;
-    sensor->joint_left_back_angle   = (float)small_driver_value.receive_right_location_data * DEG_TO_RAD;
-    sensor->joint_right_front_angle = ctrl->motor_angle_fr;
-    sensor->joint_right_back_angle  = ctrl->motor_angle_br;
+    sensor->joint_left_front_angle  = (float)small_driver_value_leg_left.receive_left_location_data * DEG_TO_RAD;
+    sensor->joint_left_back_angle   = (float)small_driver_value_leg_left.receive_right_location_data * DEG_TO_RAD;
+    sensor->joint_right_front_angle = (float)small_driver_value_leg_right.receive_left_location_data * DEG_TO_RAD;
+    sensor->joint_right_back_angle  = (float)small_driver_value_leg_right.receive_right_location_data * DEG_TO_RAD;
 
-    sensor->joint_left_front_speed  = ctrl->motor_vel_fl;
-    sensor->joint_left_back_speed   = ctrl->motor_vel_bl;
-    sensor->joint_right_front_speed = ctrl->motor_vel_fr;
-    sensor->joint_right_back_speed  = ctrl->motor_vel_br;
     //应用标定
     if (angle_offset_is_done()) {
         angle_offset_apply_to_sensor(sensor);
+    }
+
+    /* 关节速度由位置差分获得（驱动板持续回传位置数据） */
+    {
+        static float prev_lf = 0.0f, prev_lb = 0.0f, prev_rf = 0.0f, prev_rb = 0.0f;
+        static bool first = true;
+        if (first) {
+            sensor->joint_left_front_speed  = 0.0f;
+            sensor->joint_left_back_speed   = 0.0f;
+            sensor->joint_right_front_speed = 0.0f;
+            sensor->joint_right_back_speed  = 0.0f;
+            first = false;
+        } else {
+            float dt = ROBOT_CONTROL_DT;
+            sensor->joint_left_front_speed  = (sensor->joint_left_front_angle  - prev_lf) / dt;
+            sensor->joint_left_back_speed   = (sensor->joint_left_back_angle   - prev_lb) / dt;
+            sensor->joint_right_front_speed = (sensor->joint_right_front_angle - prev_rf) / dt;
+            sensor->joint_right_back_speed  = (sensor->joint_right_back_angle  - prev_rb) / dt;
+        }
+        prev_lf = sensor->joint_left_front_angle;
+        prev_lb = sensor->joint_left_back_angle;
+        prev_rf = sensor->joint_right_front_angle;
+        prev_rb = sensor->joint_right_back_angle;
     }
 
     cmd->target_speed  = -0.5f;//ctrl->velocity_cmd;

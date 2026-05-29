@@ -1,34 +1,36 @@
 #include "small_driver_uart_control.h"
 
-small_device_value_struct small_driver_value;      // ����ͨѶ�����ṹ��
+small_device_value_struct small_driver_value;               /* 驱动轮电机 (UART4) */
+small_device_value_struct small_driver_value_leg_left;      /* 左腿关节电机 (UART6) */
+small_device_value_struct small_driver_value_leg_right;     /* 右腿关节电机 (UART3) */
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ���ڽ��ջص�����
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ���ز���     void
-// ʹ��ʾ��     uart_control_callback(&small_driver_value);
-// ��ע��Ϣ     ���ڽ������յ����ٶ�����  �ú�����Ҫ�ڶ�Ӧ�Ĵ��ڽ����ж��е���
+// 函数名称     无刷通讯 接收回调函数
+// 函数说明     driver_value   指向对应的数据结构体
+// 返回值       void
+// 使用示例     uart_control_callback(&small_driver_value);
+// 备注信息     用于接收返回的速度信息  该函数需要在对应的串口接收中断中调用
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_control_callback(small_device_value_struct *driver_value)
 {
     uint8 receive_data[7];
     uint8 receive_len;
-    
+
     receive_len = uart_query_buffer(driver_value->driver_uart, receive_data);
-        
+
     if(receive_len)
     {
         if(driver_value->receive_data_buffer[0] != 0xA5)
         {
             driver_value->receive_data_count = 0;
         }
-        
+
         for(int i = 0; i < receive_len; i ++)
-        {    
+        {
             driver_value->receive_data_buffer[driver_value->receive_data_count ++] = receive_data[i];
         }
-        
+
         if(driver_value->receive_data_count >= 7)
         {
             if(driver_value->receive_data_buffer[0] == 0xA5)
@@ -50,7 +52,7 @@ void small_driver_control_callback(small_device_value_struct *driver_value)
                     {
                         short int left_angle_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
                         short int right_angle_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
-                        
+
                         driver_value->receive_left_angle_data  = (float)left_angle_temp  / 100.0f;
                         driver_value->receive_right_angle_data = (float)right_angle_temp / 100.0f;
                     }
@@ -58,7 +60,7 @@ void small_driver_control_callback(small_device_value_struct *driver_value)
                     {
                         short int left_location_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
                         short int right_location_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
-                        
+
                         driver_value->receive_left_location_data  = (float)left_location_temp  / 100.0f * driver_value->left_motor_dir;
                         driver_value->receive_right_location_data = (float)right_location_temp / 100.0f * driver_value->right_motor_dir;
                     }
@@ -82,19 +84,19 @@ void small_driver_control_callback(small_device_value_struct *driver_value)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ���� ���ռ�ձ�
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ����˵��     left_duty      �����ռ�ձ� ��ֵ-10000~10000 ��Ӧ���ռ�ձ� 0% ~ 100%���������������ת��
-// ����˵��     right_duty     �Ҳ���ռ�ձ� ��ֵ-10000~10000 ��Ӧ���ռ�ձ� 0% ~ 100%���������������ת��
-// ���ز���     void
-// ʹ��ʾ��     small_driver_set_duty(&small_driver_value, -1000, 1000);
-// ��ע��Ϣ     ���ڿ��Ƶ���������
+// 函数名称     无刷通讯 发送 占空比
+// 函数说明     driver_value   指向对应的数据结构体
+// 参数说明     left_duty      左侧占空比 数值-10000~10000 对应占空比 0% ~ 100% 负数代表反方向转动
+// 参数说明     right_duty     右侧占空比 数值-10000~10000 对应占空比 0% ~ 100% 负数代表反方向转动
+// 返回值       void
+// 使用示例     small_driver_set_duty(&small_driver_value, -1000, 1000);
+// 备注信息     用于控制电机转动
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_set_duty(small_device_value_struct *driver_value, int left_duty, int right_duty)
 {
     left_duty  = func_limit_ab(left_duty, -10000, 10000);
     right_duty = func_limit_ab(right_duty, -10000, 10000);
-    
+
     driver_value->send_data_buffer[0] = 0xA5;
     driver_value->send_data_buffer[1] = 0x01;
     driver_value->send_data_buffer[2] = (unsigned char)((left_duty & 0xff00) >> 8);
@@ -113,11 +115,11 @@ void small_driver_set_duty(small_device_value_struct *driver_value, int left_dut
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ���� ��λ��
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ���ز���     void
-// ʹ��ʾ��     small_driver_set_location_zero(&small_driver_value);
-// ��ע��Ϣ     ���ڽ����ٺ�����ĵ�ǰλ������Ϊ0�Ƕ� �������ڴ˽Ƕ���ת
+// 函数名称     无刷通讯 设置 零位
+// 函数说明     driver_value   指向对应的数据结构体
+// 返回值       void
+// 使用示例     small_driver_set_location_zero(&small_driver_value);
+// 备注信息     用于减速器后的当前位置设置为0角度 电机在此角度上转动
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_set_location_zero(small_device_value_struct *driver_value)
 {
@@ -138,11 +140,11 @@ void small_driver_set_location_zero(small_device_value_struct *driver_value)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ��ȡ ת������
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ���ز���     void
-// ʹ��ʾ��     small_driver_get_speed(&small_driver_value);
-// ��ע��Ϣ     ��ȡ�����ǰת������ ��λ RPM
+// 函数名称     无刷通讯 获取 转速信息
+// 函数说明     driver_value   指向对应的数据结构体
+// 返回值       void
+// 使用示例     small_driver_get_speed(&small_driver_value);
+// 备注信息     获取电机当前转速信息 单位 RPM
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_get_speed(small_device_value_struct *driver_value)
 {
@@ -163,11 +165,11 @@ void small_driver_get_speed(small_device_value_struct *driver_value)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ��ȡ �����ǰת�ӻ�е�Ƕ�
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ���ز���     void
-// ʹ��ʾ��     small_driver_get_angle(&small_driver_value);
-// ��ע��Ϣ     ��ȡ�����ǰת�ӻ�е�Ƕ� ��λ ��
+// 函数名称     无刷通讯 获取 电机当前转子机械角度
+// 函数说明     driver_value   指向对应的数据结构体
+// 返回值       void
+// 使用示例     small_driver_get_angle(&small_driver_value);
+// 备注信息     获取电机当前转子机械角度 单位 度
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_get_angle(small_device_value_struct *driver_value)
 {
@@ -188,11 +190,11 @@ void small_driver_get_angle(small_device_value_struct *driver_value)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ��ȡ �����ǰͨ�����ٽṹ�������Ƕ� 
-// ����˵��     driver_value   ������Ӧ�����ݽṹ��
-// ���ز���     void
-// ʹ��ʾ��     small_driver_get_location(&small_driver_value);
-// ��ע��Ϣ     ��ȡ�����ǰͨ�����ٽṹ�������Ƕ�  ��λ ��
+// 函数名称     无刷通讯 获取 电机当前通过减速结构后的角度
+// 函数说明     driver_value   指向对应的数据结构体
+// 返回值       void
+// 使用示例     small_driver_get_location(&small_driver_value);
+// 备注信息     获取电机当前通过减速结构后的角度  单位 度
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_get_location(small_device_value_struct *driver_value)
 {
@@ -212,43 +214,55 @@ void small_driver_get_location(small_device_value_struct *driver_value)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// �������     ��ˢ���� ����ͨѶ��ʼ��
-// ����˵��     void
-// ���ز���     void
-// ʹ��ʾ��     small_driver_uart_init();
-// ��ע��Ϣ
+// 函数名称     无刷通讯初始化
+// 函数说明     初始化三个驱动板：UART4(驱动轮)、UART6(左腿关节)、UART3(右腿关节)
+// 返回值       void
+// 使用示例     small_driver_uart_init();
+// 备注信息
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_uart_init(void)
 {
-    memset(&small_driver_value, 0, sizeof(small_driver_value));                                 // ����ṹ������
-    
-    small_driver_value.driver_uart = SMALL_DRIVER_UART;                                         // ��¼��ǰ����ʹ�õĴ��ں�
+    /* ── 驱动轮电机 (UART4) ── */
+    memset(&small_driver_value, 0, sizeof(small_driver_value));
+    small_driver_value.driver_uart       = SMALL_DRIVER_UART_DRIVE;
+    small_driver_value.left_motor_dir    = LEFT_MOTOR_DIR;
+    small_driver_value.right_motor_dir   = RIGHT_MOTOR_DIR;
 
-    small_driver_value.left_motor_dir  = LEFT_MOTOR_DIR;                                        // ��¼��ǰ�������������ת����
-    
-    small_driver_value.right_motor_dir = RIGHT_MOTOR_DIR;                                       // ��¼��ǰ�����Ҳ�������ת����
-    
-    uart_init(SMALL_DRIVER_UART, SMALL_DRIVER_BAUDRATE, SMALL_DRIVER_RX, SMALL_DRIVER_TX);      // ���ڳ�ʼ��
-    
-    uart_rx_trigger_interrupt(SMALL_DRIVER_UART, 6);                                            // ����Ϊ7�ֽ��������
-    
-    uart_rx_interrupt(SMALL_DRIVER_UART, 1);                                                    // ʹ�ܴ��ڽ����ж�
+    uart_init(SMALL_DRIVER_UART_DRIVE, SMALL_DRIVER_DRIVE_BAUDRATE, SMALL_DRIVER_DRIVE_TX, SMALL_DRIVER_DRIVE_RX);
+    uart_rx_trigger_interrupt(SMALL_DRIVER_UART_DRIVE, 6);
+    uart_rx_interrupt(SMALL_DRIVER_UART_DRIVE, 1);
 
-    small_driver_set_duty(&small_driver_value, 0, 0);                                           // ����0ռ�ձ�
+    /* ── 左腿关节电机 (UART6) ── */
+    memset(&small_driver_value_leg_left, 0, sizeof(small_driver_value_leg_left));
+    small_driver_value_leg_left.driver_uart       = SMALL_DRIVER_UART_LEG_LEFT;
+    small_driver_value_leg_left.left_motor_dir    = 1;       /* 左前关节方向 */
+    small_driver_value_leg_left.right_motor_dir   = 1;       /* 左后关节方向 */
 
-    small_driver_get_location(&small_driver_value);                                                // ��ȡʵʱ�ٶ�����
+    uart_init(SMALL_DRIVER_UART_LEG_LEFT, SMALL_DRIVER_LEG_LEFT_BAUDRATE, SMALL_DRIVER_LEG_LEFT_TX, SMALL_DRIVER_LEG_LEFT_RX);
+    uart_rx_trigger_interrupt(SMALL_DRIVER_UART_LEG_LEFT, 6);
+    uart_rx_interrupt(SMALL_DRIVER_UART_LEG_LEFT, 1);
+
+    /* ── 右腿关节电机 (UART3) ── */
+    memset(&small_driver_value_leg_right, 0, sizeof(small_driver_value_leg_right));
+    small_driver_value_leg_right.driver_uart       = SMALL_DRIVER_UART_LEG_RIGHT;
+    small_driver_value_leg_right.left_motor_dir    = -1;      /* RF 标定方向与 LF 相反, motor_dir 补偿编码器符号 */
+    small_driver_value_leg_right.right_motor_dir   = 1;       /* 右后关节方向 */
+
+    uart_init(SMALL_DRIVER_UART_LEG_RIGHT, SMALL_DRIVER_LEG_RIGHT_BAUDRATE, SMALL_DRIVER_LEG_RIGHT_TX, SMALL_DRIVER_LEG_RIGHT_RX);
+    uart_rx_trigger_interrupt(SMALL_DRIVER_UART_LEG_RIGHT, 6);
+    uart_rx_interrupt(SMALL_DRIVER_UART_LEG_RIGHT, 1);
+
+    /* ── 发送初始命令 ── */
+    small_driver_set_duty(&small_driver_value, 0, 0);               /* 驱动轮停止 */
+    small_driver_set_duty(&small_driver_value_leg_left, 0, 0);      /* 左腿关节停止 */
+    small_driver_set_duty(&small_driver_value_leg_right, 0, 0);     /* 右腿关节停止 */
+
+    /* 各驱动板只需查询一次，后续会持续回传数据 */
+    small_driver_get_speed(&small_driver_value);
+    small_driver_get_speed(&small_driver_value_leg_left);
+    small_driver_get_speed(&small_driver_value_leg_right);
+
+    small_driver_get_location(&small_driver_value);
+    small_driver_get_location(&small_driver_value_leg_left);
+    small_driver_get_location(&small_driver_value_leg_right);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

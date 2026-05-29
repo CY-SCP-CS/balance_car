@@ -66,20 +66,34 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
         g_motor_cmd.right_front_joint_pwm = 0;
         g_motor_cmd.right_back_joint_pwm  = 0;
         small_driver_set_duty(&small_driver_value, 0, 0);
+        small_driver_set_duty(&small_driver_value_leg_left, 0, 0);
+        small_driver_set_duty(&small_driver_value_leg_right, 0, 0);
     } else if (!angle_offset_is_done()) {
 
         /* 标定逻辑在 ISR 中以 1ms 周期运行（依赖其内部 timeout/stall 计数） */
         angle_offset_process(&g_sensor_data, &g_motor_cmd);
-        small_driver_set_duty(&small_driver_value,
+        small_driver_set_duty(&small_driver_value, 0, 0);   /* 标定期间驱动轮停止 */
+        small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
             -g_motor_cmd.left_back_joint_pwm);
+        small_driver_set_duty(&small_driver_value_leg_right,
+            -g_motor_cmd.right_front_joint_pwm,
+            -g_motor_cmd.right_back_joint_pwm);
     } else {
 
         control_task();
 
         small_driver_set_duty(&small_driver_value,
+            -g_motor_cmd.left_motor_pwm,
+            -g_motor_cmd.right_motor_pwm);
+        small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
             -g_motor_cmd.left_back_joint_pwm);
+        /* RF: 标定零位在正向极限(+600), 前伸需-PWM, -pwm_front直接给出正确方向, 不取反 */
+        /* RB: 标定零位在正向极限(+600), 前伸需-PWM, -(-pwm_back)=pwm_back给出正确方向 */
+        small_driver_set_duty(&small_driver_value_leg_right,
+            g_motor_cmd.right_front_joint_pwm,
+            -g_motor_cmd.right_back_joint_pwm);
     }
 }
 
@@ -219,15 +233,13 @@ void uart3_isr (void)
 {
     if(uart_isr_mask(UART_3))            // ����3�����ж�
     {
-        
-        
-        
+        small_driver_control_callback(&small_driver_value_leg_right);
     }
     else                                // ����3�����ж�
     {
-      
-        
-        
+
+
+
     }
 }
 
@@ -266,15 +278,13 @@ void uart6_isr (void)
 {
     if(uart_isr_mask(UART_6))            // ����6�����ж�
     {
-
-        
-       
+        small_driver_control_callback(&small_driver_value_leg_left);
     }
     else                                // ����6�����ж�
     {
-      
-        
-        
+
+
+
     }
 }
 // **************************** �����жϺ��� ****************************

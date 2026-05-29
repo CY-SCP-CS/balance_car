@@ -16,9 +16,8 @@ void leg_pid_control(Leg_PID_t *pid,
     float front_target, back_target;
 
     if (side == LEG_LEFT) {
-        /* 左腿: 前关节直接读取, 后关节取反(与 kinematics 中 -sensor 约定一致) */
         front_angle   = sensor->joint_left_front_angle;
-        back_angle    = -sensor->joint_left_back_angle;
+        back_angle    = sensor->joint_left_back_angle;
         front_target  = target->front;
         back_target   = target->back;
     } else {
@@ -40,7 +39,7 @@ void leg_pid_control(Leg_PID_t *pid,
         motor_cmd->left_front_joint_pwm = -pwm_front;
         motor_cmd->left_back_joint_pwm  = -pwm_back;
     } else {
-        motor_cmd->right_front_joint_pwm = pwm_front;
-        motor_cmd->right_back_joint_pwm  = pwm_back;
+        motor_cmd->right_front_joint_pwm = -pwm_front;
+        motor_cmd->right_back_joint_pwm  = -pwm_back;
     }
 }

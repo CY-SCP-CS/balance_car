@@ -37,7 +37,7 @@ int main(void)
     small_driver_uart_init();
     robot_control_init();
 
-    angle_offset_start_leg(LEG_LEFT, NULL);//调试用，正式使用时改为 angle_offset_start(NULL);
+    angle_offset_start(NULL);               // 标定全部四个关节 (左前/左后/右前/右后)
 
     pit_ms_init(PIT_CH1, 1);
 
@@ -46,6 +46,7 @@ int main(void)
     while (!angle_offset_is_done()) {
         imu_update(&g_ctrl);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+        system_delay_ms(1);
 
         if (angle_offset_has_fault()) {
             zf_log(0, "Angle calibration FAILED (timeout). Halting.");
@@ -68,6 +69,7 @@ int main(void)
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+        system_delay_ms(1);
         //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop

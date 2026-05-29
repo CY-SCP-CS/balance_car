@@ -1162,6 +1162,12 @@
             <group>
                 <name>robot_control</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\jump.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\jump.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\robot_control\robot_control.c</name>
                 </file>
                 <file>
@@ -1253,6 +1259,12 @@
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\leg_pid_control.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_vmc_control.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_vmc_control.h</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\vmc_calculate.c</name>
