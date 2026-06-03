@@ -186,8 +186,8 @@ void control_task(void){
 void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd_t *cmd){
 
     /* --- 传感器数据桥接 --- */
-    sensor->angle_pitch    = ctrl->body_roll;
-    sensor->angle_roll     = ctrl->body_pitch;
+    sensor->angle_pitch    = ctrl->body_pitch;
+    sensor->angle_roll     = ctrl->body_roll;
     sensor->angle_yaw      = 0.0f;                     /* 无绝对偏航参考 */
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;

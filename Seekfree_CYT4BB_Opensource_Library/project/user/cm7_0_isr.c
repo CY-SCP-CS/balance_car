@@ -83,17 +83,20 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
 
         control_task();
 
-        small_driver_set_duty(&small_driver_value,
+        /*small_driver_set_duty(&small_driver_value,
             -g_motor_cmd.left_motor_pwm,
-            -g_motor_cmd.right_motor_pwm);
+            -g_motor_cmd.right_motor_pwm);*/
+        small_driver_set_duty(&small_driver_value,
+            1000,
+            1000);//驱动电机
         small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
-            -g_motor_cmd.left_back_joint_pwm);
+            -g_motor_cmd.left_back_joint_pwm);//左腿关节电机
         small_driver_set_duty(&small_driver_value_leg_right,
             -g_motor_cmd.right_front_joint_pwm,
-            -g_motor_cmd.right_back_joint_pwm);
+            -g_motor_cmd.right_back_joint_pwm);//右腿关节电机
     }
-}
+}//在供电接线上面，驱动电机走的是独立供电，关节电机走的是分叉供电
 
 void pit0_ch2_isr()                     // ��ʱ��ͨ�� 2 �����жϷ�����      
 {
