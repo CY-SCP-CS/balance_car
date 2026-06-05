@@ -40,6 +40,7 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/control/leg/angle_offset.h"
 
 
 // **************************** PIT�жϺ��� ****************************
@@ -56,12 +57,46 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
 {
     pit_isr_flag_clear(PIT_CH1);
 
-    control_task();
+    if (angle_offset_has_fault()) {
 
-    small_driver_set_duty(&small_driver_value,
-        g_motor_cmd.left_motor_pwm,
-        g_motor_cmd.right_motor_pwm);
-}
+        g_motor_cmd.left_motor_pwm      = 0;
+        g_motor_cmd.right_motor_pwm     = 0;
+        g_motor_cmd.left_front_joint_pwm  = 0;
+        g_motor_cmd.left_back_joint_pwm   = 0;
+        g_motor_cmd.right_front_joint_pwm = 0;
+        g_motor_cmd.right_back_joint_pwm  = 0;
+        small_driver_set_duty(&small_driver_value, 0, 0);
+        small_driver_set_duty(&small_driver_value_leg_left, 0, 0);
+        small_driver_set_duty(&small_driver_value_leg_right, 0, 0);
+    } else if (!angle_offset_is_done()) {
+
+        /* 标定逻辑在 ISR 中以 1ms 周期运行（依赖其内部 timeout/stall 计数） */
+        angle_offset_process(&g_sensor_data, &g_motor_cmd);
+        small_driver_set_duty(&small_driver_value, 0, 0);   /* 标定期间驱动轮停止 */
+        small_driver_set_duty(&small_driver_value_leg_left,
+            -g_motor_cmd.left_front_joint_pwm,
+            -g_motor_cmd.left_back_joint_pwm);
+        small_driver_set_duty(&small_driver_value_leg_right,
+            -g_motor_cmd.right_front_joint_pwm,
+            -g_motor_cmd.right_back_joint_pwm);
+    } else {
+
+        control_task();
+
+        /*small_driver_set_duty(&small_driver_value,
+            -g_motor_cmd.left_motor_pwm,
+            -g_motor_cmd.right_motor_pwm);*/
+        small_driver_set_duty(&small_driver_value,
+            g_motor_cmd.left_motor_pwm,
+            g_motor_cmd.right_motor_pwm);//驱动电机
+        small_driver_set_duty(&small_driver_value_leg_left,
+            -g_motor_cmd.left_front_joint_pwm,
+            -g_motor_cmd.left_back_joint_pwm);//左腿关节电机
+        small_driver_set_duty(&small_driver_value_leg_right,
+            -g_motor_cmd.right_front_joint_pwm,
+            -g_motor_cmd.right_back_joint_pwm);//右腿关节电机
+    }
+}//在供电接线上面，驱动电机走的是独立供电，关节电机走的是分叉供电
 
 void pit0_ch2_isr()                     // ��ʱ��ͨ�� 2 �����жϷ�����      
 {
@@ -199,15 +234,13 @@ void uart3_isr (void)
 {
     if(uart_isr_mask(UART_3))            // ����3�����ж�
     {
-        
-        
-        
+        small_driver_control_callback(&small_driver_value_leg_right);
     }
     else                                // ����3�����ж�
     {
-      
-        
-        
+
+
+
     }
 }
 
@@ -246,15 +279,13 @@ void uart6_isr (void)
 {
     if(uart_isr_mask(UART_6))            // ����6�����ж�
     {
-
-        
-       
+        small_driver_control_callback(&small_driver_value_leg_left);
     }
     else                                // ����6�����ж�
     {
-      
-        
-        
+
+
+
     }
 }
 // **************************** �����жϺ��� ****************************

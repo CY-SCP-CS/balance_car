@@ -26,7 +26,7 @@ int five_bar_jacobian(const Joint_angle_t *angles, float J[2][2]){
 
     float half_knee_dist = knee_dist * 0.5f;
     float foot_h = sqrtf(fmaxf(0.0f, shank_len * shank_len - half_knee_dist * half_knee_dist));
-    
+
     float mid_knee_x = (left_knee_x + right_knee_x) * 0.5f;
     float mid_knee_y = (left_knee_y + right_knee_y) * 0.5f;
 
@@ -38,12 +38,12 @@ int five_bar_jacobian(const Joint_angle_t *angles, float J[2][2]){
     float foot_y = mid_knee_y + foot_h * unit_ny;
 
     /* ---- 3. 构建雅可比矩阵计算所需的几何向量 ---- */
-    /* 
+    /*
      * A * V_foot = B * Omega_motor
      * A = [ (Foot-LeftKnee)^T ]   B = [ (Foot-LeftKnee)^T * V_LeftKnee_Unit  * thigh ]
      *     [ (Foot-RightKnee)^T]       [ (Foot-RightKnee)^T * V_RightKnee_Unit * thigh ]
      */
-    
+
     /* 向量：膝关节 -> 足端 (即小腿方向) */
     float l_shank_x = foot_x - left_knee_x;
     float l_shank_y = foot_y - left_knee_y;
@@ -71,5 +71,19 @@ int five_bar_jacobian(const Joint_angle_t *angles, float J[2][2]){
     J[1][0] = -inv_detA * r_shank_x * b11;
     J[1][1] =  inv_detA * l_shank_x * b22;
 
+    return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+/* 对 2×2 雅可比求逆并求解 J * dθ = [dx; dy] *///AI给的，实测没问题
+int five_bar_jacobian_solve(const float J[2][2],
+                            float *dtheta1, float *dtheta2,
+                            float dx, float dy) {
+    float det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+    if (fabsf(det) < 1e-8f) return -1;
+
+    float inv_det = 1.0f / det;
+    *dtheta1 = inv_det * ( J[1][1] * dx - J[0][1] * dy);
+    *dtheta2 = inv_det * (-J[1][0] * dx + J[0][0] * dy);
     return 0;
 }

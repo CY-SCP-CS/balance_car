@@ -62,8 +62,9 @@ void vmc_calculate(const VMC_Config_t *vmc_cfg,
     int pwm_back  = ROUND(tau_back);
 
     if (leg_side == LEG_LEFT) {
-        motor_cmd->left_front_joint_pwm = pwm_front;
-        motor_cmd->left_back_joint_pwm  = pwm_back;
+        /* ISR 会对 left leg PWM 取反 (cm7_0_isr.c:80-82), 这里先取反抵消 */
+        motor_cmd->left_front_joint_pwm = -pwm_front;
+        motor_cmd->left_back_joint_pwm  = -pwm_back;
     } else {
         motor_cmd->right_front_joint_pwm = pwm_front;
         motor_cmd->right_back_joint_pwm  = pwm_back;

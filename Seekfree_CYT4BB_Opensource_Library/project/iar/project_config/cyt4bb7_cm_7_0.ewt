@@ -1475,6 +1475,12 @@
             <group>
                 <name>robot_control</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\jump.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\jump.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\robot_control\robot_control.c</name>
                 </file>
                 <file>
@@ -1538,6 +1544,12 @@
             <group>
                 <name>leg</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\angle_offset.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\angle_offset.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\jacobian.c</name>
                 </file>
                 <file>
@@ -1554,6 +1566,18 @@
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\leg_cmd_solve.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_pid_control.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_pid_control.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_vmc_control.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\control\leg\leg_vmc_control.h</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\control\leg\vmc_calculate.c</name>

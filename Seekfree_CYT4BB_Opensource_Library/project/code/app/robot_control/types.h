@@ -67,11 +67,11 @@ typedef struct
 } VMC_Config_t;
 
 /* 五杆机构几何参数 */
-#define LEG_JOINT_DISTANCE      50.0f   /* 关节电机间距（mm） */
-#define LEG_THIGH               100.0f  /* 大腿长（mm） */
-#define LEG_SHANK               100.0f  /* 小腿长（mm） */
-#define LEG_LENGTH_STANDARD     20.0f   /* 标准腿长（mm） */
-#define LEG_WHEEL_RADIUS        20.0f   /* 轮子半径（mm） */
+#define LEG_JOINT_DISTANCE      48.0f   /* 关节电机间距（mm） */
+#define LEG_THIGH               85.0f  /* 大腿长（mm） */
+#define LEG_SHANK               135.0f  /* 小腿长（mm） */
+#define LEG_LENGTH_STANDARD     45.0f   /* 标准腿长（mm） */
+#define LEG_WHEEL_RADIUS        32.5f   /* 轮子半径（mm） */
 
 /* 物理参数 —— 用于 LQR 增益调度 */
 #define ROBOT_BODY_MASS         2.5f    /* kg - 车体质量（不含轮） */

@@ -6,6 +6,7 @@
 #include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/control/leg/angle_offset.h"
 
 static Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
@@ -31,18 +32,34 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-    ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
+   // ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
 
     small_driver_uart_init();
     robot_control_init();
+
+    angle_offset_start(NULL);               // æ ‡å®šå…¨éƒ¨å››ä¸ªå…³èŠ‚ (å·¦å‰/å·¦å/å³å‰/å³å)
 
     pit_ms_init(PIT_CH1, 1);
 
     interrupt_global_enable(0);
 
+    while (!angle_offset_is_done()) {
+        imu_update(&g_ctrl);
+        small_driver_get_speed(&small_driver_value);
+        sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+        system_delay_ms(1);
+
+        if (angle_offset_has_fault()) {
+            zf_log(0, "Angle calibration FAILED (timeout). Halting.");
+            while (true);
+        }
+    }
+    zf_log(0, "Angle calibration OK.");
+
     while(true)
     {
-        imu_update(&g_ctrl);//¿ÉÒÔµÄ»°·Åµ½¿ØÖÆÖĞ¶ÏÀïÃæ
+
+        imu_update(&g_ctrl);//ï¿½ï¿½ï¿½ÔµÄ»ï¿½ï¿½Åµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¶ï¿½ï¿½ï¿½ï¿½ï¿½
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
         vision_update(&g_vision);
@@ -52,8 +69,10 @@ int main(void)
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
+        small_driver_get_speed(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
-        ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
+        system_delay_ms(1);
+        //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
         // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
         //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 
