@@ -50,12 +50,12 @@ static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
-    pid_init(&g_pitch_gyro_pid,  -1170.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       0.4f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 500.0f);
+    pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
+    pid_init(&g_speed_pid,       -0.4f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 500.0f);
     pid_init(&g_speed_right_pid, 15.5f, 0.0f, 0.05f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
     //针对腿位置的PID，需要在完整的车上调试
-    pid_init(&g_leg_speed_pid, 30.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, 30.0f, 10.0f);
-    pid_init(&g_leg_roll_pid,  10.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_speed_pid, -150.0f, -0.5f, 0.0f, ROBOT_CONTROL_DT, 30.0f, 10.0f);
+    pid_init(&g_leg_roll_pid,  -10.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
     leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
@@ -230,7 +230,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed  = -0.5f;//ctrl->velocity_cmd;
+    cmd->target_speed  = -0.0f;//ctrl->velocity_cmd;
     cmd->target_roll   = 0.0f;//ctrl->steering_cmd;
     cmd->target_height = 0.0f;
 }

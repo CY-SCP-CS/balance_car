@@ -87,8 +87,8 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
             -g_motor_cmd.left_motor_pwm,
             -g_motor_cmd.right_motor_pwm);*/
         small_driver_set_duty(&small_driver_value,
-            1000,
-            1000);//驱动电机
+            g_motor_cmd.left_motor_pwm,
+            g_motor_cmd.right_motor_pwm);//驱动电机
         small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
             -g_motor_cmd.left_back_joint_pwm);//左腿关节电机

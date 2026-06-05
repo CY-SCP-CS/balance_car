@@ -1,7 +1,7 @@
 #include "pitch_balance.h"
 #include "math.h"
 /* IMU 安装偏移量（rad）：车体水平放置时 angle_roll 的读数 */
-#define ANGLE_OFFSET    (-0.0f) /* 车体水平时 angle_roll 的读数 */
+#define ANGLE_OFFSET    (3.2f) /* 车体水平时 angle_roll 的读数 */
 #define DEG_TO_RAD   (0.01745f)
 #define RAD_TO_DEG ( 57.29578f)
 /*
