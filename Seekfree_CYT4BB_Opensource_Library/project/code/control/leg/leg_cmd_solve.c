@@ -1,5 +1,7 @@
 #include "leg_cmd_solve.h"
 #include <math.h>
+#include <stdio.h>
+#include <stdint.h>
 
 /* ─── 足端最大偏移量 ─── */
 #define FOOT_X_OFFSET_MAX      50.0f   /* 速度闭环最大 x 偏移 (mm) */
@@ -19,13 +21,13 @@ void leg_cmd_solve(const Move_cmd_t *move_cmd,
     Foot_position_t *foot_position_left,
     Foot_position_t *foot_position_right){
 
-    float speed_cur   = (sensor->motor_left_speed - sensor->motor_right_speed) / 2.0f;//平均速度
+    float speed_cur   = (sensor->motor_left_speed + sensor->motor_right_speed) / 2.0f;//平均速度
     float speed_norm  = speed_cur / SPEED_MAX_RADPS;
     float x_target    = pid_calculate(pid_leg_speed, move_cmd->target_speed, speed_norm);
     x_target          = CLAMP(x_target, -FOOT_X_OFFSET_MAX, FOOT_X_OFFSET_MAX);
 
     foot_position_left->x  = x_target;
-    foot_position_right->x = x_target;
+    foot_position_right->x = -x_target;
 
     float roll_norm   = sensor->angle_roll / ROLL_MAX_RAD;
     float roll_output = pid_calculate(pid_leg_roll, move_cmd->target_roll, roll_norm);

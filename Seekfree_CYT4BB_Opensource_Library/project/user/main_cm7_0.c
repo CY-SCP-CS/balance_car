@@ -45,6 +45,7 @@ int main(void)
 
     while (!angle_offset_is_done()) {
         imu_update(&g_ctrl);
+        small_driver_get_speed(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
 
@@ -68,6 +69,7 @@ int main(void)
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
+        small_driver_get_speed(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
         //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
