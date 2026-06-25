@@ -12,9 +12,6 @@
 #include "../../control/leg/jacobian.h"
 #include <math.h>
 
-#define M_PI 3.1415926f
-#define M_PI_2 (M_PI / 2.0f)
-
 static Foot_position_t foot_position_left;
 
 static Foot_position_t foot_position_right;
@@ -35,16 +32,9 @@ static Leg_Target_t g_leg_target_left, g_leg_target_right;
 static VMC_Config_t g_vmc_config;
 #endif
 
-PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid, g_speed_right_pid;
+PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
+PID_Controller_t g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
-#define LEG_NOM_FRONT_L     1.0f
-#define LEG_NOM_BACK_L     -1.0f
-#define LEG_NOM_FRONT_R    1.0f
-#define LEG_NOM_BACK_R     -1.0f
-
-/* 右腿与左腿编码器符号一致 */
-#define RIGHT_ABS_FRONT_SIGN  1.0f
-#define RIGHT_ABS_BACK_SIGN   1.0f
 
 
 void robot_control_init(void){
@@ -52,7 +42,7 @@ void robot_control_init(void){
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
     pid_init(&g_speed_pid,       -0.4f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 500.0f);
-    pid_init(&g_speed_right_pid, 15.5f, 0.0f, 0.05f, ROBOT_CONTROL_DT, 10000.0f, 100.0f);
+    pid_init(&g_yaw_pid,       10.0f, 0.0f, 1.0f, ROBOT_CONTROL_DT, 3000.0f, 0.0f);  /* 抑制旋转: P=阻尼, D=角加速度 */
     //针对腿位置的PID，需要在完整的车上调试
     pid_init(&g_leg_speed_pid, 400.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, 60.0f, 10.0f);
     pid_init(&g_leg_roll_pid,  -10.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
@@ -76,13 +66,14 @@ void robot_control_init(void){
     remote_param_bind(1, &g_pitch_gyro_pid.kp);
     remote_param_bind(2, &g_pitch_gyro_pid.kd);
     remote_param_bind(3, &g_speed_pid.kp);
-    remote_param_bind(4, &g_speed_right_pid.kp);
-    remote_param_bind(5, &g_leg_left_pid.front.kp);
-    remote_param_bind(6, &g_leg_roll_pid.kp);
+    remote_param_bind(4, &g_leg_left_pid.front.kp);
+    remote_param_bind(5, &g_leg_roll_pid.kp);
+    remote_param_bind(6, &g_yaw_pid.kp);
+    remote_param_bind(7, &g_yaw_pid.kd);
 
 #if USE_VMC
-    remote_param_bind(7, &g_vmc_config.kp);
-    remote_param_bind(8, &g_vmc_config.kd);
+    remote_param_bind(8, &g_vmc_config.kp);
+    remote_param_bind(9, &g_vmc_config.kd);
 #endif
 
     jump_init();
@@ -107,6 +98,43 @@ void robot_control_reset_balance_pid(void){
 }
 
 /*---------------------------------------------------------------------------*/
+/** 将足端偏移通过雅可比逆解转换为关节目标角度 */
+void leg_offset_to_joint_target(LegSide_t side,
+    const Foot_position_t *foot_pos, Leg_Target_t *target)
+{
+    float nom_front, nom_back, sign_front, sign_back;
+
+    if (side == LEG_LEFT) {
+        nom_front  = LEG_NOM_FRONT_L;
+        nom_back   = LEG_NOM_BACK_L;
+        sign_front = 1.0f;
+        sign_back  = 1.0f;
+    } else {
+        nom_front  = LEG_NOM_FRONT_R;
+        nom_back   = LEG_NOM_BACK_R;
+        sign_front = RIGHT_ABS_FRONT_SIGN;
+        sign_back  = RIGHT_ABS_BACK_SIGN;
+    }
+
+    Joint_angle_t abs_nominal;
+    float J[2][2], dth1, dth2;
+
+    abs_nominal.left_motor_angle  = M_PI_2 + sign_front * nom_front;
+    abs_nominal.right_motor_angle = M_PI_2 + sign_back  * nom_back;
+
+    if (five_bar_jacobian(&abs_nominal, J) == 0 &&
+        five_bar_jacobian_solve(J, &dth1, &dth2,
+            foot_pos->x, foot_pos->y) == 0) {
+        target->front = nom_front + sign_front * dth1;
+        target->back  = nom_back  + sign_back  * dth2;
+    } else {
+        /* 奇异 → 保持标称 */
+        target->front = nom_front;
+        target->back  = nom_back;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 void control_task(void){
     Sensor_data_t sensor_local = g_sensor_data;
     Move_cmd_t     cmd_local   = g_move_cmd;
@@ -120,6 +148,14 @@ void control_task(void){
     pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
         &g_pitch_gyro_pid, &g_motor_cmd);
 
+    //偏航抑制: 用陀螺仪角速度做反馈, 阻尼旋转 (不需要绝对航向)
+    {
+        float yaw_out = pid_calculate(&g_yaw_pid, 0.0f, sensor_local.gyro_yaw);
+        int   yaw_pwm = ROUND(yaw_out);
+        g_motor_cmd.left_motor_pwm  += yaw_pwm;
+        g_motor_cmd.right_motor_pwm += yaw_pwm;
+    }
+
     //计算目标足端位置
     leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
         &foot_position_left, &foot_position_right);
@@ -131,49 +167,9 @@ void control_task(void){
                     &foot_position_left, &foot_position_right,
                     &g_motor_cmd);
 #else
-    /* ---- 左腿 ---- */
-    {
-        Joint_angle_t abs_nominal;      /* 标称位形对应的绝对角度 */
-        float J[2][2], dth1, dth2;
+    leg_offset_to_joint_target(LEG_LEFT,  &foot_position_left,  &g_leg_target_left);
+    leg_offset_to_joint_target(LEG_RIGHT, &foot_position_right, &g_leg_target_right);
 
-        abs_nominal.left_motor_angle  = (float)M_PI_2 + LEG_NOM_FRONT_L;
-
-        abs_nominal.right_motor_angle = (float)M_PI_2 + LEG_NOM_BACK_L;
-
-        if (five_bar_jacobian(&abs_nominal, J) == 0 &&
-            five_bar_jacobian_solve(J, &dth1, &dth2,
-                foot_position_left.x, foot_position_left.y) == 0) {
-            g_leg_target_left.front  = LEG_NOM_FRONT_L + dth1;
-            g_leg_target_left.back   = LEG_NOM_BACK_L  + dth2;
-        } else {
-            /* 奇异 → 保持标称 */ //AI给的位置过远时可能会奇异，先保持标称位形，后续可以考虑更安全的处理方式
-            g_leg_target_left.front  = LEG_NOM_FRONT_L;
-            g_leg_target_left.back   = LEG_NOM_BACK_L;
-        }
-    }
-
-    /* ---- 右腿 ---- *///下面都是AI给的位置，右腿是镜像安装的，传感器方向也可能相反，所以要调整一下绝对角度的标称位形和符号
-    {
-        Joint_angle_t abs_nominal;
-        float J[2][2], dth1, dth2;
-
-        /* 右腿传感器方向可能因镜像安装而与左腿相反, 通过符号宏调节 */
-        abs_nominal.left_motor_angle  = (float)M_PI_2 + RIGHT_ABS_FRONT_SIGN * LEG_NOM_FRONT_R;
-        abs_nominal.right_motor_angle = (float)M_PI_2 + RIGHT_ABS_BACK_SIGN  * LEG_NOM_BACK_R;
-
-        if (five_bar_jacobian(&abs_nominal, J) == 0 &&
-            five_bar_jacobian_solve(J, &dth1, &dth2,
-                foot_position_right.x, foot_position_right.y) == 0) {
-            /* target = LEG_NOM + RIGHT_SIGN * dθ (与 abs 转换符号一致) */
-            g_leg_target_right.front = LEG_NOM_FRONT_R + RIGHT_ABS_FRONT_SIGN * dth1;
-            g_leg_target_right.back  = LEG_NOM_BACK_R  + RIGHT_ABS_BACK_SIGN  * dth2;
-        } else {
-            /* 奇异 → 保持标称 */ //AI给的位置过远时可能会奇异，先保持标称位形，后续可以考虑更安全的处理方式
-            g_leg_target_right.front = LEG_NOM_FRONT_R;
-            g_leg_target_right.back  = LEG_NOM_BACK_R;
-        }
-    }
-    //PID加发命令
     leg_pid_control(&g_leg_left_pid, &g_leg_target_left,
                     &sensor_local, LEG_LEFT, &g_motor_cmd);
 

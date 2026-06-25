@@ -1,6 +1,5 @@
 #include "leg_cmd_solve.h"
 #include <math.h>
-#include <stdio.h>
 #include <stdint.h>
 
 /* ─── 足端最大偏移量 ─── */
@@ -12,7 +11,6 @@
 #define SPEED_MAX_RADPS        60.0f   /* 速度归一化基准 (rad/s) */
 #define ROLL_MAX_RAD            0.8f  //最大roll补偿
 
-#define CLAMP(val, lo, hi)  fminf(fmaxf(val, lo), hi)
 
 void leg_cmd_solve(const Move_cmd_t *move_cmd,
     const Sensor_data_t *sensor,

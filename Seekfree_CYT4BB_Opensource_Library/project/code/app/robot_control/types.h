@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include "../../common/types.h"
+
 /* 传感器数据 —— 各控制模块的统一输入 */
 typedef struct
 {

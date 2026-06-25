@@ -22,10 +22,6 @@
 #define L_NOMINAL_M             (LEG_LENGTH_STANDARD * 0.001f)/* m */
 #define L_FILTER_WINDOW         5           /* 滑动平均窗长度 */
 
-/* ─── 工具宏 ───────────────────────────────────────────────────────── */
-#define DEG_TO_RAD  (0.01745f)
-#define CLAMP(x, lo, hi)  (((x) < (lo)) ? (lo) : (((x) > (hi)) ? (hi) : (x)))
-
 /*──────────────────────────────────────────────────────────────────────*/
 /* Horner 法求多项式值：c[0] + x*(c[1] + x*(c[2] + x*c[3]))           */
 static inline float poly_eval(const float c[LQR_POLY_ORDER], float x)

@@ -8,7 +8,7 @@
 #include "../code/app/robot_control/small_driver_uart_control.h"
 #include "../code/control/leg/angle_offset.h"
 
-static Ctrl_Input_t   g_ctrl;
+Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
 static Vision_Result_t g_vision;
 
@@ -45,7 +45,6 @@ int main(void)
 
     while (!angle_offset_is_done()) {
         imu_update(&g_ctrl);
-        small_driver_get_speed(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
 
@@ -59,7 +58,7 @@ int main(void)
     while(true)
     {
 
-        imu_update(&g_ctrl);//���ԵĻ��ŵ������ж�����
+        imu_update(&g_ctrl);// IMU update: for testing, can be moved to timer ISR
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
         vision_update(&g_vision);

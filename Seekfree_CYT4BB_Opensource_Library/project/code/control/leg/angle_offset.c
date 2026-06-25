@@ -35,7 +35,7 @@ static struct
     CalibState_t          last_state;       /* 最后一个要标定的状态 */
     CalibSubState_t       sub_state;        /* 标定子状态 */
     AngleOffset_Config_t  cfg;
-    float                 offset_deg[JOINT_COUNT];  /* 各关节零位偏移 */
+    float                 offset_rad[JOINT_COUNT];  /* 各关节零位偏移 (rad) */
     bool                  all_done;         /* 全部完成 */
     bool                  fault;            /* 超时出错 */
     int                   settle_counter;   /* 等待计数器 */
@@ -197,7 +197,7 @@ void angle_offset_process(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_c
             g_calib.stall_counter = 0;
         } else if (++g_calib.stall_counter > 3000) {
             /* 3 秒还没动，记录当前位置并跳过 */
-            g_calib.offset_deg[current_joint] = current_angle;
+            g_calib.offset_rad[current_joint] = current_angle;
             advance_state(motor_cmd);
             return;
         }
@@ -218,7 +218,7 @@ void angle_offset_process(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_c
         g_calib.prev_angle = current_angle;
 
         if (g_calib.stall_counter >= (int)g_calib.cfg.stall_cycles) {
-            g_calib.offset_deg[current_joint] = current_angle;
+            g_calib.offset_rad[current_joint] = current_angle;
             advance_state(motor_cmd);
             return;
         }
@@ -241,8 +241,8 @@ bool angle_offset_has_fault(void)
 
 void angle_offset_apply_to_sensor(Sensor_data_t *sensor)
 {
-    sensor->joint_left_front_angle  -= g_calib.offset_deg[JOINT_LEFT_FRONT];
-    sensor->joint_left_back_angle   -= g_calib.offset_deg[JOINT_LEFT_BACK];
-    sensor->joint_right_front_angle -= g_calib.offset_deg[JOINT_RIGHT_FRONT];
-    sensor->joint_right_back_angle  -= g_calib.offset_deg[JOINT_RIGHT_BACK];
+    sensor->joint_left_front_angle  -= g_calib.offset_rad[JOINT_LEFT_FRONT];
+    sensor->joint_left_back_angle   -= g_calib.offset_rad[JOINT_LEFT_BACK];
+    sensor->joint_right_front_angle -= g_calib.offset_rad[JOINT_RIGHT_FRONT];
+    sensor->joint_right_back_angle  -= g_calib.offset_rad[JOINT_RIGHT_BACK];
 }

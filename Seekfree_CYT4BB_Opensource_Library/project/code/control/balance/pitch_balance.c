@@ -1,32 +1,5 @@
 #include "pitch_balance.h"
 #include "math.h"
-/* IMU 安装偏移量（rad）：车体水平放置时 angle_roll 的读数 */
-#define ANGLE_OFFSET    (3.2f) /* 车体水平时 angle_roll 的读数 */
-#define DEG_TO_RAD   (0.01745f)
-#define RAD_TO_DEG ( 57.29578f)
-/*
-void pitch_balance_control(const Sensor_data_t *sensor_data,
-    PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
-    Motor_cmd_duty_t *motor_cmd){
-
-    float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
-    float angle_target = pid_calculate(pid_speed, 0.0f, speed_cur); 
-
-    float angle_cur = sensor_data->angle_pitch - ANGLE_OFFSET * DEG_TO_RAD; 
-    float gyro_target = pid_calculate(pid_angle, angle_target, angle_cur);
-
-    float gyro_cur = sensor_data->gyro_pitch;
-    float pwm_base = pid_calculate(pid_gyro, gyro_target, gyro_cur);
-
-    float pwm_left  = pwm_base; 
-    float pwm_right = -pwm_base; 
-
-    motor_cmd->left_motor_pwm  = ROUND(pwm_left);
-    motor_cmd->right_motor_pwm = ROUND(pwm_right);
-}
-*/
-
-#define K_GRAVITY_COMP  50.0f  // 重力补偿
 
 void pitch_balance_control(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
@@ -39,26 +12,26 @@ void pitch_balance_control(const Sensor_data_t *sensor_data,
         float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
          speed_output = pid_calculate(pid_speed, 0.0f, speed_cur); 
 
-        float angle_cur = sensor_data->angle_pitch - ANGLE_OFFSET * DEG_TO_RAD; 
+        float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
         float angle_output = pid_calculate(pid_angle, 0.0f, angle_cur);
 
         gyro_target = angle_output;
     }
-    
+
     counter = (counter + 1) % 10;
 
     float gyro_cur = sensor_data->gyro_pitch;
     float pwm_base = pid_calculate(pid_gyro, gyro_target, gyro_cur)+ speed_output;
 
-    float angle_cur_current = sensor_data->angle_pitch - ANGLE_OFFSET * DEG_TO_RAD;
-    float ff_gravity = K_GRAVITY_COMP * sinf(angle_cur_current);
+    float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
+    float ff_gravity = GRAVITY_COMP_GAIN * sinf(angle_cur);
     pwm_base += ff_gravity;
 
     motor_cmd->left_motor_pwm  = ROUND(pwm_base);
     motor_cmd->right_motor_pwm = ROUND(-pwm_base);
 }
-#define K_GRAVITY_COMP   50.0f  // 重力补偿
-#define MAX_STATIC_ANGLE (1.5f * DEG_TO_RAD) // 认为车体算得上“静止”的最大角度偏差（约1.5度）
+
+#define MAX_STATIC_ANGLE ((1.5f) * DEG_TO_RAD) // 认为车体算得上”静止”的最大角度偏差（约1.5度）
 
 void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
@@ -68,7 +41,7 @@ void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     // 1. 数据采样与处理（满频运行，不降频）
     // ==========================================
     float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
-    float angle_cur = sensor_data->angle_pitch - ANGLE_OFFSET * DEG_TO_RAD;
+    float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     float gyro_cur  = sensor_data->gyro_pitch;
 
     // ==========================================
@@ -82,15 +55,15 @@ void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
         // 【状态A：车体很接近直立点，需要死死静止】
         // 角度越小，速度环权重越大，且人为注入一个高阻尼（模拟模糊Kd增大），防止前后洗衣服
         float static_ratio = 1.0f - (abs_angle / MAX_STATIC_ANGLE); // 0.0 ~ 1.0
-        speed_scale = 1.0f; 
-        
+        speed_scale = 1.0f;
+
         // 当接近绝对静止时，额外给速度环提供 -0.1 ~ -0.3 的临时 D 增量
         // 这一项相当于模糊 PID 里的 Delta_Kd，用来吸收原地的低频晃动
-        speed_kd_bias = 0.2f * static_ratio; 
+        speed_kd_bias = 0.2f * static_ratio;
     } else {
         // 【状态B：车体处于运动状态或受到扰动】
         // 随着角度变大，线性削弱速度环。如果角度过大，速度环完全让位给平衡环
-        speed_scale = 1.0f - ((abs_angle - MAX_STATIC_ANGLE) / (5.0f * DEG_TO_RAD));
+        speed_scale = 1.0f - ((abs_angle - MAX_STATIC_ANGLE) / ((5.0f) * DEG_TO_RAD));
         if (speed_scale < 0.1f) speed_scale = 0.1f; // 至少保留10%防飞车
         speed_kd_bias = 0.0f;
     }
@@ -120,7 +93,7 @@ void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     // ==========================================
     // 5. 前馈重力补偿与最终输出
     // ==========================================
-    float ff_gravity = K_GRAVITY_COMP * sinf(angle_cur);
+    float ff_gravity = GRAVITY_COMP_GAIN * sinf(angle_cur);
     pwm_base += ff_gravity;
 
     motor_cmd->left_motor_pwm  = ROUND(pwm_base);
