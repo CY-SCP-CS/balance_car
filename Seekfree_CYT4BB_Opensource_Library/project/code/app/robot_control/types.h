@@ -94,4 +94,12 @@ typedef struct
 /* 控制周期 */
 #define ROBOT_CONTROL_DT        0.001f
 
+/* 差速转向 */
+#define MAX_YAW_RATE            3.0f    /* 最大目标偏航角速度 (rad/s) */
+
+/* 安全保护阈值 */
+#define SAFE_PITCH_MAX_DEG   45.0f      /* 俯仰角保护 (deg) */
+#define SAFE_ROLL_MAX_DEG    35.0f      /* 横滚角保护 (deg) */
+#define SAFE_JOINT_MAX_RAD   2.618f     /* 关节最大转角 = 150° (rad, 相对限位) */
+
 #endif /* TYPES_H */

@@ -23,6 +23,7 @@ void imu_update(Ctrl_Input_t *fb)
 {
     fb->body_pitch      = imu660rc_pitch * DEG_TO_RAD;
     fb->body_roll       = imu660rc_roll  * DEG_TO_RAD;
+    fb->body_yaw        = imu660rc_yaw   * DEG_TO_RAD;
 
     // 陀螺仪轴映射：Y → 俯仰角速度，Z → 偏航角速度
     // 安装方向不同时修改 imu660rc_gyro_x/y/z 的对应关系

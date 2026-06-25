@@ -33,7 +33,7 @@ static VMC_Config_t g_vmc_config;
 #endif
 
 PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
-PID_Controller_t g_yaw_pid;
+PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 
 
@@ -41,15 +41,17 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       -0.4f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 10000.0f, 500.0f);
-    pid_init(&g_yaw_pid,       10.0f, 0.0f, 1.0f, ROBOT_CONTROL_DT, 3000.0f, 0.0f);  /* 抑制旋转: P=阻尼, D=角加速度 */
+    pid_init(&g_speed_pid,       -0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 2000.0f, 500.0f);
+    //偏航串级: 外环角度, 内环角速度
+    pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
+    pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
-    pid_init(&g_leg_speed_pid, 400.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, 60.0f, 10.0f);
-    pid_init(&g_leg_roll_pid,  -10.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_speed_pid, 450.0f, 0.8f, 0.5f, ROBOT_CONTROL_DT, 60.0f, 10.0f);
+    pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
-    leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
-    leg_pid_init(&g_leg_right_pid, 1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
+    leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
+    leg_pid_init(&g_leg_right_pid, 1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
 
 #if USE_VMC
     g_vmc_config.kp = 0.25f;
@@ -72,8 +74,8 @@ void robot_control_init(void){
     remote_param_bind(7, &g_yaw_pid.kd);
 
 #if USE_VMC
-    remote_param_bind(8, &g_vmc_config.kp);
-    remote_param_bind(9, &g_vmc_config.kd);
+    remote_param_bind(6, &g_vmc_config.kp);
+    remote_param_bind(7, &g_vmc_config.kd);
 #endif
 
     jump_init();
@@ -132,12 +134,64 @@ void leg_offset_to_joint_target(LegSide_t side,
         target->front = nom_front;
         target->back  = nom_back;
     }
+
+    /* 关节限位: 不发出超过180°的目标 */
+    target->front = CLAMP(target->front, -SAFE_JOINT_MAX_RAD, SAFE_JOINT_MAX_RAD);
+    target->back  = CLAMP(target->back,  -SAFE_JOINT_MAX_RAD, SAFE_JOINT_MAX_RAD);
+}
+
+/*---------------------------------------------------------------------------*/
+/** 安全检查: 倾角/关节角度超限时切断所有电机输出, 返回 false
+ *  故障会锁存, 一旦触发则后续所有周期永久停机, 需复位重启.
+ */
+static bool g_safety_fault = false;
+
+static bool safety_check(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cmd)
+{
+    /* ── 倾角保护 ── */
+    float pitch_deg = sensor->angle_pitch * RAD_TO_DEG;
+    float roll_deg  = sensor->angle_roll  * RAD_TO_DEG;
+
+    if (g_safety_fault) {
+        goto fault;
+    }
+
+    if (fabsf(pitch_deg) > SAFE_PITCH_MAX_DEG ||
+        fabsf(roll_deg)  > SAFE_ROLL_MAX_DEG) {
+        g_safety_fault = true;
+        goto fault;
+    }
+
+    /* ── 关节角度保护 (相对限位的转角) ── */
+    if (fabsf(sensor->joint_left_front_angle)  > SAFE_JOINT_MAX_RAD ||
+        fabsf(sensor->joint_left_back_angle)   > SAFE_JOINT_MAX_RAD ||
+        fabsf(sensor->joint_right_front_angle) > SAFE_JOINT_MAX_RAD ||
+        fabsf(sensor->joint_right_back_angle)  > SAFE_JOINT_MAX_RAD) {
+        g_safety_fault = true;
+        goto fault;
+    }
+
+    return true;
+
+fault:
+    motor_cmd->left_motor_pwm       = 0;
+    motor_cmd->right_motor_pwm      = 0;
+    motor_cmd->left_front_joint_pwm  = 0;
+    motor_cmd->left_back_joint_pwm   = 0;
+    motor_cmd->right_front_joint_pwm = 0;
+    motor_cmd->right_back_joint_pwm  = 0;
+    return false;
 }
 
 /*---------------------------------------------------------------------------*/
 void control_task(void){
     Sensor_data_t sensor_local = g_sensor_data;
     Move_cmd_t     cmd_local   = g_move_cmd;
+
+    if (!safety_check(&sensor_local, &g_motor_cmd)) {
+      
+        return;
+    }
 
     if (jump_is_active()) {
         jump_control(&sensor_local, &g_motor_cmd);
@@ -148,12 +202,23 @@ void control_task(void){
     pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
         &g_pitch_gyro_pid, &g_motor_cmd);
 
-    //偏航抑制: 用陀螺仪角速度做反馈, 阻尼旋转 (不需要绝对航向)
+    //差速转向: 串级控制 (外环角度, 内环角速度)
     {
-        float yaw_out = pid_calculate(&g_yaw_pid, 0.0f, sensor_local.gyro_yaw);
+        static float yaw_angle        = 0.0f;
+        static float target_yaw_angle = 0.0f;
+
+        float target_yaw_rate = cmd_local.target_roll * MAX_YAW_RATE;
+        target_yaw_angle += target_yaw_rate * ROBOT_CONTROL_DT;
+        yaw_angle        += sensor_local.gyro_yaw * ROBOT_CONTROL_DT;
+
+        /* 外环: 角度误差 (同参考系) → 角速度修正 */
+        float rate_correction = pid_calculate(&g_yaw_angle_pid, target_yaw_angle, yaw_angle);
+
+        /* 内环: 前馈角速度 + 角度修正 → 差模 PWM, 立即响应 */
+        float yaw_out = pid_calculate(&g_yaw_pid, target_yaw_rate + rate_correction, -sensor_local.gyro_yaw);
         int   yaw_pwm = ROUND(yaw_out);
-        g_motor_cmd.left_motor_pwm  += yaw_pwm;
-        g_motor_cmd.right_motor_pwm += yaw_pwm;
+        g_motor_cmd.left_motor_pwm  -= yaw_pwm;
+        g_motor_cmd.right_motor_pwm -= yaw_pwm;
     }
 
     //计算目标足端位置
@@ -184,7 +249,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     /* --- 传感器数据桥接 --- */
     sensor->angle_pitch    = ctrl->body_pitch;
     sensor->angle_roll     = ctrl->body_roll;
-    sensor->angle_yaw      = 0.0f;                     /* 无绝对偏航参考 */
+    sensor->angle_yaw      = ctrl->body_yaw;
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
     sensor->gyro_roll      = ctrl->gyro_roll_rate;
@@ -226,7 +291,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed  = -0.0f;//ctrl->velocity_cmd;
-    cmd->target_roll   = 0.0f;//ctrl->steering_cmd;
+    cmd->target_speed  = 0.0f;//测试
+    cmd->target_roll   = 0.0f;
     cmd->target_height = 0.0f;
 }

@@ -6,6 +6,7 @@
 #include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/app/robot_control/jump.h"
 #include "../code/control/leg/angle_offset.h"
 
 Ctrl_Input_t   g_ctrl;
@@ -54,6 +55,8 @@ int main(void)
         }
     }
     zf_log(0, "Angle calibration OK.");
+
+    //jump_start();   // 测试跳跃
 
     while(true)
     {

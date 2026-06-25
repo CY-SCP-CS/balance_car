@@ -35,6 +35,7 @@
 typedef struct {
     float body_pitch;
     float body_roll;
+    float body_yaw;
     float gyro_pitch_rate;
     float gyro_yaw_rate;
     float gyro_roll_rate;

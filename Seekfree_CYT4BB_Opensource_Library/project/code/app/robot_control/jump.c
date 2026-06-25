@@ -10,7 +10,8 @@
 /* =========================== 状态枚举 =========================== */
 typedef enum {
     JUMP_IDLE = 0,      /* 空闲 */
-    JUMP_PREPARE,       /* 准备：收腿下蹲，达到前进速度 */
+    JUMP_BALANCE,       /* 预平衡：轮子平衡, 腿保持标称 */
+    JUMP_PREPARE,       /* 准备：收腿下蹲 */
     JUMP_TAKEOFF,       /* 起跳：快速伸腿蹬地 */
     JUMP_ASCEND,        /* 上升：空中收腿, 关闭俯仰平衡 */
     JUMP_DESCEND,       /* 下降：伸腿准备接地 */
@@ -21,11 +22,12 @@ typedef enum {
 /* ===================== 可调参数 (1 kHz 周期) ===================== */
 
 /* 各阶段持续时间 (控制周期数, 1 cycle = 1 ms) */
-#define PREPARE_CYCLES      400     /* 400 ms 准备下蹲 */
-#define TAKEOFF_CYCLES      100     /* 100 ms 蹬地爆发 */
-#define ASCEND_CYCLES       200     /* 200 ms 空中收腿 */
-#define DESCEND_CYCLES      100     /* 100 ms 伸腿准备接地 */
-#define LAND_CYCLES         300     /* 300 ms 缓冲恢复 */
+#define BALANCE_CYCLES       500     /* 500 ms 预平衡 */
+#define PREPARE_CYCLES       500     /* 500 ms 准备下蹲 */
+#define TAKEOFF_CYCLES       250     /* 250 ms 蹬地伸展 */
+#define ASCEND_CYCLES        200     /* 200 ms 空中收腿 */
+#define DESCEND_CYCLES       100     /* 100 ms 伸腿准备接地 */
+#define LAND_CYCLES          600     /* 600 ms 缓冲恢复 */
 
 /* 足端位置偏移量 (mm, 相对标称位形)
  *   坐标系: +X 向前, +Y 向下
@@ -33,19 +35,19 @@ typedef enum {
  *   Y > 0 : 足端下压 ⇔ 伸腿 ⇔ 重心升高 (蹬地)
  */
 #define OFF_SQUAT_X     0.0f
-#define OFF_SQUAT_Y    -30.0f       /* 下蹲收腿 */
+#define OFF_SQUAT_Y    -85.0f       /* 下蹲收腿 (标称141→56mm) */
 
 #define OFF_PUSH_X      0.0f
-#define OFF_PUSH_Y      25.0f       /* 蹬地伸展 */
+#define OFF_PUSH_Y      175.0f      /* 蹬地伸展 (足端约209mm) */
 
 #define OFF_TUCK_X      0.0f
-#define OFF_TUCK_Y     -35.0f       /* 空中紧收 */
+#define OFF_TUCK_Y     -85.0f       /* 空中紧收 (标称141→56mm) */
 
 #define OFF_REACH_X     5.0f
-#define OFF_REACH_Y     15.0f       /* 伸腿找地 (略向前够) */
+#define OFF_REACH_Y     70.0f       /* 伸腿找地 (标称141→211mm) */
 
 #define OFF_ABSORB_X    0.0f
-#define OFF_ABSORB_Y   -15.0f       /* 着陆缓冲 */
+#define OFF_ABSORB_Y   -50.0f       /* 着陆缓冲 (标称141→91mm) */
 
 #define TOTAL_JUMPS     3           /* 连续跳跃次数 */
 
@@ -80,7 +82,7 @@ static void run_leg_pid(const Sensor_data_t *sensor,
                     sensor, LEG_RIGHT, motor_cmd);
 }
 
-/** 俯仰平衡 + 偏航抑制 (地面相位用, 阻尼旋转) */
+/** 俯仰平衡 + 偏航差速抑制 (地面相位用) */
 static void balance_with_yaw(const Sensor_data_t *sensor,
                              Motor_cmd_duty_t *motor_cmd)
 {
@@ -88,10 +90,11 @@ static void balance_with_yaw(const Sensor_data_t *sensor,
         &g_speed_pid, &g_pitch_angle_pid, &g_pitch_gyro_pid,
         motor_cmd);
 
-    float yaw_out = pid_calculate(&g_yaw_pid, 0.0f, sensor->gyro_yaw);
+    /* 差速转向: 与 control_task 保持一致 */
+    float yaw_out = pid_calculate(&g_yaw_pid, 0.0f, -sensor->gyro_yaw);
     int   yaw_pwm = ROUND(yaw_out);
     motor_cmd->left_motor_pwm  += yaw_pwm;
-    motor_cmd->right_motor_pwm += yaw_pwm;
+    motor_cmd->right_motor_pwm -= yaw_pwm;
 }
 
 /* ====================== 状态机逻辑 ============================= */
@@ -101,13 +104,33 @@ static void enter_state(JumpState_t new_state) {
     g_cycle = 0;
 }
 
+static void run_balance(const Sensor_data_t *sensor,
+                        Motor_cmd_duty_t *motor_cmd)
+{
+    /* 预平衡: 轮子平衡, 腿保持标称 */
+    Foot_position_t off = { 0.0f, 0.0f };
+
+    balance_with_yaw(sensor, motor_cmd);
+
+    leg_offset_to_joint_target(LEG_LEFT,  &off, &g_target_left);
+    leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
+    run_leg_pid(sensor, motor_cmd);
+
+    if (g_cycle >= BALANCE_CYCLES) {
+        /* 进入下蹲前复位平衡 PID */
+        reset_balance();
+        enter_state(JUMP_PREPARE);
+    }
+}
+
 static void run_prepare(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 下蹲收腿, 保持俯仰平衡以维持前进速度 */
+    /* 下蹲收腿, 轮子不动, 纯靠腿改变重心 */
     Foot_position_t off = { OFF_SQUAT_X, OFF_SQUAT_Y };
 
-    balance_with_yaw(sensor, motor_cmd);
+    motor_cmd->left_motor_pwm  = 0;
+    motor_cmd->right_motor_pwm = 0;
 
     leg_offset_to_joint_target(LEG_LEFT,  &off, &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
@@ -121,10 +144,11 @@ static void run_prepare(const Sensor_data_t *sensor,
 static void run_takeoff(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 快速伸腿蹬地, 俯仰平衡保持车身姿态 */
+    /* 快速伸腿蹬地, 轮子不动 */
     Foot_position_t off = { OFF_PUSH_X, OFF_PUSH_Y };
 
-    balance_with_yaw(sensor, motor_cmd);
+    motor_cmd->left_motor_pwm  = 0;
+    motor_cmd->right_motor_pwm = 0;
 
     leg_offset_to_joint_target(LEG_LEFT,  &off, &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
@@ -140,13 +164,9 @@ static void run_takeoff(const Sensor_data_t *sensor,
 static void run_ascend(const Sensor_data_t *sensor,
                        Motor_cmd_duty_t *motor_cmd)
 {
-    /* 空中收腿: 俯仰平衡输出归零 (轮子无附着力) */
+    /* 空中收腿: 轮子悬空, 直接清零不调平衡PID */
     Foot_position_t off = { OFF_TUCK_X, OFF_TUCK_Y };
 
-    /* 仍调用平衡函数获取最新的 PID 输出, 但最终归零 */
-    pitch_balance_control(sensor,
-        &g_speed_pid, &g_pitch_angle_pid, &g_pitch_gyro_pid,
-        motor_cmd);
     motor_cmd->left_motor_pwm  = 0;
     motor_cmd->right_motor_pwm = 0;
 
@@ -163,12 +183,9 @@ static void run_ascend(const Sensor_data_t *sensor,
 static void run_descend(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 伸腿准备接地, 轮子仍悬空 → 平衡输出归零 */
+    /* 伸腿准备接地, 轮子仍悬空 */
     Foot_position_t off = { OFF_REACH_X, OFF_REACH_Y };
 
-    pitch_balance_control(sensor,
-        &g_speed_pid, &g_pitch_angle_pid, &g_pitch_gyro_pid,
-        motor_cmd);
     motor_cmd->left_motor_pwm  = 0;
     motor_cmd->right_motor_pwm = 0;
 
@@ -206,7 +223,7 @@ static void run_land(const Sensor_data_t *sensor,
         g_jump_num++;
         if (g_jump_num < TOTAL_JUMPS) {
             /* 连续跳下一级台阶 */
-            enter_state(JUMP_PREPARE);
+            enter_state(JUMP_BALANCE);
         } else {
             enter_state(JUMP_END);
         }
@@ -234,9 +251,9 @@ static void run_end(const Sensor_data_t *sensor,
 /* ======================== 公开接口 ============================= */
 
 void jump_init(void) {
-    /* 初始化腿部关节 PID (与 robot_control_init 一致) */
-    leg_pid_init(&g_leg_left_pid,  1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
-    leg_pid_init(&g_leg_right_pid, 1500.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
+    /* 腿部关节 PID (与 robot_control_init 一致) */
+    leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
+    leg_pid_init(&g_leg_right_pid, 1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
 
     g_state    = JUMP_IDLE;
     g_cycle    = 0;
@@ -252,7 +269,12 @@ void jump_init(void) {
 void jump_start(void) {
     if (g_state == JUMP_IDLE) {
         g_jump_num = 0;
-        enter_state(JUMP_PREPARE);
+        /* 复位腿 PID 积分, 从零开始跟踪 */
+        pid_reset(&g_leg_left_pid.front);
+        pid_reset(&g_leg_left_pid.back);
+        pid_reset(&g_leg_right_pid.front);
+        pid_reset(&g_leg_right_pid.back);
+        enter_state(JUMP_BALANCE);
     }
 }
 
@@ -276,6 +298,10 @@ void jump_control(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cmd) {
     g_cycle++;
 
     switch (g_state) {
+    case JUMP_BALANCE:
+        run_balance(sensor, motor_cmd);
+        break;
+
     case JUMP_PREPARE:
         run_prepare(sensor, motor_cmd);
         break;

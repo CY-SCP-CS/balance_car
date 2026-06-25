@@ -22,6 +22,7 @@ extern PID_Controller_t g_pitch_angle_pid;
 extern PID_Controller_t g_pitch_gyro_pid;
 
 /* 偏航角速度 PID (jump.c 需要共享) */
+extern PID_Controller_t g_yaw_angle_pid;
 extern PID_Controller_t g_yaw_pid;
 
 void robot_control_init(void);

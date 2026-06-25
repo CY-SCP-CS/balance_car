@@ -27,6 +27,7 @@ void leg_cmd_solve(const Move_cmd_t *move_cmd,
     foot_position_left->x  = x_target;
     foot_position_right->x = -x_target;
 
+    //横滚平衡: roll PID 调整双腿高度差，保持车身水平
     float roll_norm   = sensor->angle_roll / ROLL_MAX_RAD;
     float roll_output = pid_calculate(pid_leg_roll, move_cmd->target_roll, roll_norm);
     roll_output       = CLAMP(roll_output, -1.0f, 1.0f);
@@ -34,7 +35,6 @@ void leg_cmd_solve(const Move_cmd_t *move_cmd,
     foot_position_left->y  =  roll_output * FOOT_ROLL_OFFSET_MAX;
     foot_position_right->y = -roll_output * FOOT_ROLL_OFFSET_MAX;
 
-    //可能可以作为前馈，根据单边桥情况而定，先直接给0
     float height_offset = move_cmd->target_height * HEIGHT_OFFSET_MAX;
     foot_position_left->y  += height_offset;
     foot_position_right->y += height_offset;
