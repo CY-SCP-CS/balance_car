@@ -1,27 +1,35 @@
 #include "pitch_balance.h"
 #include "math.h"
 
+/* 降频 static 变量 — 文件作用域，供外部复位 */
+static uint8_t pb_counter      = 0;
+static float   pb_gyro_target  = 0.0f;
+static float   pb_speed_output = 0.0f;
+
+void pitch_balance_reset_statics(void) {
+    pb_counter      = 0;
+    pb_gyro_target  = 0.0f;
+    pb_speed_output = 0.0f;
+}
+
 void pitch_balance_control(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
     Motor_cmd_duty_t *motor_cmd){
 
-    static uint8_t counter = 0;
-    static float gyro_target = 0.0f; 
-    static float speed_output;
-    if (counter == 0) {
+    if (pb_counter == 0) {
         float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
-         speed_output = pid_calculate(pid_speed, 0.0f, speed_cur); 
+        pb_speed_output = pid_calculate(pid_speed, 0.0f, speed_cur);
 
         float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
         float angle_output = pid_calculate(pid_angle, 0.0f, angle_cur);
 
-        gyro_target = angle_output;
+        pb_gyro_target = angle_output;
     }
 
-    counter = (counter + 1) % 10;
+    pb_counter = (pb_counter + 1) % 10;
 
     float gyro_cur = sensor_data->gyro_pitch;
-    float pwm_base = pid_calculate(pid_gyro, gyro_target, gyro_cur)+ speed_output;
+    float pwm_base = pid_calculate(pid_gyro, pb_gyro_target, gyro_cur) + pb_speed_output;
 
     float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     float ff_gravity = GRAVITY_COMP_GAIN * sinf(angle_cur);

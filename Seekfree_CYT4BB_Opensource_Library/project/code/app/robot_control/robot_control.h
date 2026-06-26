@@ -41,4 +41,8 @@ void robot_control_reset_balance_pid(void);
 void leg_offset_to_joint_target(LegSide_t side,
     const Foot_position_t *foot_pos, Leg_Target_t *target);
 
+/* 腿速度环 + 横滚补偿 (供 jump.c 地面相位复用) */
+void robot_control_leg_speed_feedback(const Sensor_data_t *sensor,
+    Foot_position_t *left, Foot_position_t *right);
+
 #endif /* ROBOT_CONTROL_H */

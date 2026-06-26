@@ -10,6 +10,7 @@
 #include "../../control/leg/leg_vmc_control.h"
 #include "../../control/leg/kinematics.h"
 #include "../../control/leg/jacobian.h"
+#include "../../control/balance/pitch_balance.h"
 #include <math.h>
 
 static Foot_position_t foot_position_left;
@@ -97,6 +98,22 @@ void robot_control_reset_balance_pid(void){
     pid_reset(&g_pitch_angle_pid);
     pid_reset(&g_pitch_gyro_pid);
     pid_reset(&g_speed_pid);
+    pitch_balance_reset_statics();
+}
+
+/*---------------------------------------------------------------------------*/
+/** 腿位置速度环反馈: 根据轮速调整足端 X, 根据横滚调整足端 Y */
+void robot_control_leg_speed_feedback(const Sensor_data_t *sensor,
+    Foot_position_t *left, Foot_position_t *right)
+{
+    Move_cmd_t dummy = { .target_speed = 0.0f, .target_roll = 0.0f, .target_height = 0.0f };
+    Foot_position_t fb_left, fb_right;
+    leg_cmd_solve(&dummy, sensor, &g_leg_speed_pid, &g_leg_roll_pid,
+                  &fb_left, &fb_right);
+    left->x  += fb_left.x;
+    left->y  += fb_left.y;
+    right->x += fb_right.x;
+    right->y += fb_right.y;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -204,17 +221,33 @@ void control_task(void){
 
     //差速转向: 串级控制 (外环角度, 内环角速度)
     {
-        static float yaw_angle        = 0.0f;
         static float target_yaw_angle = 0.0f;
+        static bool  yaw_init = true;
+        static float prev_target_roll = 0.0f;  /* 检测 roll 指令跳变, 复位 yaw PID 积分 */
+
+        if (yaw_init) {
+            target_yaw_angle = sensor_local.angle_yaw;
+            yaw_init = false;
+        }
 
         float target_yaw_rate = cmd_local.target_roll * MAX_YAW_RATE;
         target_yaw_angle += target_yaw_rate * ROBOT_CONTROL_DT;
-        yaw_angle        += sensor_local.gyro_yaw * ROBOT_CONTROL_DT;
 
-        /* 外环: 角度误差 (同参考系) → 角速度修正 */
-        float rate_correction = pid_calculate(&g_yaw_angle_pid, target_yaw_angle, yaw_angle);
+        /* 角度归一化到 [-PI, PI], 防止多次旋转后 target 与 IMU yaw 跨周期累积 */
+        while (target_yaw_angle >  M_PI) target_yaw_angle -= 2.0f * M_PI;
+        while (target_yaw_angle < -M_PI) target_yaw_angle += 2.0f * M_PI;
 
-        /* 内环: 前馈角速度 + 角度修正 → 差模 PWM, 立即响应 */
+        /* roll 指令跳变时复位 yaw PID, 防止积分饱和导致乱转 */
+        if (cmd_local.target_roll != prev_target_roll) {
+            pid_reset(&g_yaw_angle_pid);
+            pid_reset(&g_yaw_pid);
+            prev_target_roll = cmd_local.target_roll;
+        }
+
+        /* 外环: 角度误差 → 角速度修正 (IMU绝对偏航, 无漂移) */
+        float rate_correction = pid_calculate(&g_yaw_angle_pid, target_yaw_angle, sensor_local.angle_yaw);
+
+        /* 内环: 前馈角速度 + 角度修正 → 差模 PWM */
         float yaw_out = pid_calculate(&g_yaw_pid, target_yaw_rate + rate_correction, -sensor_local.gyro_yaw);
         int   yaw_pwm = ROUND(yaw_out);
         g_motor_cmd.left_motor_pwm  -= yaw_pwm;
@@ -241,6 +274,46 @@ void control_task(void){
     leg_pid_control(&g_leg_right_pid, &g_leg_target_right,
                     &sensor_local, LEG_RIGHT, &g_motor_cmd);
 #endif
+}
+
+/*---------------------------------------------------------------------------*/
+/* 画方测试: 前进 1 秒 → 右转 90° → 重复 8 次 → 停止 */
+#define SQUARE_FWD_MS      1000    /* 前进时长 (ms) */
+#define SQUARE_TURN_MS     1000    /* 右转 90° 时长 (ms) */
+#define SQUARE_FWD_SPEED   0.3f    /* 前进速度 */
+#define SQUARE_TURN_ROLL  -0.524f  /* 右转 roll: -π/2 / MAX_YAW_RATE ≈ -0.524 */
+#define SQUARE_COUNT       8       /* 重复次数 */
+
+static void square_test(Move_cmd_t *cmd) {
+    static uint8_t  side   = 0;   /* 当前第几边 (0~7, 共8边) */
+    static uint8_t  phase  = 0;   /* 0=前进, 1=转弯 */
+    static uint32_t timer  = 0;   /* 当前相位已过周期数 */
+
+    if (side >= SQUARE_COUNT) {
+        cmd->target_speed  = 0.0f;
+        cmd->target_roll   = 0.0f;
+        return;
+    }
+
+    if (phase == 0) {
+        /* 前进 */
+        cmd->target_speed  = SQUARE_FWD_SPEED;
+        cmd->target_roll   = 0.0f;
+        if (timer >= SQUARE_FWD_MS) {
+            phase = 1;
+            timer = 0;
+        }
+    } else {
+        /* 右转 */
+        cmd->target_speed  = 0.0f;
+        cmd->target_roll   = SQUARE_TURN_ROLL;
+        if (timer >= SQUARE_TURN_MS) {
+            phase = 0;
+            side++;
+            timer = 0;
+        }
+    }
+    timer++;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -291,7 +364,8 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed  = 0.0f;//测试
-    cmd->target_roll   = 0.0f;
     cmd->target_height = 0.0f;
+
+    /* 画方测试 */
+    square_test(cmd);
 }
