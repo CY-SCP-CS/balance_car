@@ -43,9 +43,11 @@ typedef struct
 
 typedef struct
 {
-    float target_speed;     /* 速度    [-1, +1] */
-    float target_height;    /* AI给的，暂时没用，保留 [-1, +1] */
-    float target_roll;      /* 压弯    [-1, +1] */
+    float target_direction; /* 目标偏航角 (rad), 绝对朝向, 外部输入 */
+    float target_distance;  /* 剩余距离 (m), 外部输入, 0=不使用 */
+    float target_speed;     /* 速度    [-1, +1], 内部计算 */
+    float target_roll;      /* 压弯    [-1, +1], 内部自动计算 */
+    float target_height;    /* 高度    [-1, +1] */
 } Move_cmd_t;
 
 /* 足端笛卡尔坐标 */

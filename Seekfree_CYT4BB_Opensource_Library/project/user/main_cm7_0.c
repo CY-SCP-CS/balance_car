@@ -58,8 +58,10 @@ int main(void)
 
     //jump_start();   // 测试跳跃
 
+    static int cycle = 0;
     while(true)
     {
+        cycle++;
 
         imu_update(&g_ctrl);// IMU update: for testing, can be moved to timer ISR
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
@@ -72,6 +74,9 @@ int main(void)
         nav_apply_ctrl(&g_ctrl, &nav_out);
 
         small_driver_get_speed(&small_driver_value);
+        if (cycle % 10 == 0) {
+            small_driver_get_angle(&small_driver_value);
+        }
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
         //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);

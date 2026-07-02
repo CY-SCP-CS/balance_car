@@ -45,4 +45,11 @@ void leg_offset_to_joint_target(LegSide_t side,
 void robot_control_leg_speed_feedback(const Sensor_data_t *sensor,
     Foot_position_t *left, Foot_position_t *right);
 
+/* 里程计: 弧线积分位姿 (x,y,θ) + 路径长度 */
+float robot_control_get_x(void);
+float robot_control_get_y(void);
+float robot_control_get_theta(void);
+float robot_control_get_distance(void);
+float robot_control_get_yaw(void);
+
 #endif /* ROBOT_CONTROL_H */
