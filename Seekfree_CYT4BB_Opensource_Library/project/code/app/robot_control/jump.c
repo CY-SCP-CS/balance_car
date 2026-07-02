@@ -35,7 +35,7 @@ typedef enum {
  *   Y > 0 : 足端下压 ⇔ 伸腿 ⇔ 重心升高 (蹬地)
  */
 #define OFF_PUSH_X      0.0f
-#define OFF_PUSH_Y      -300.0f      /* 蹬地伸展 (足端约209mm) */
+#define OFF_PUSH_Y      -400.0f      /* 蹬地伸展 (足端约209mm) */
 
 #define OFF_SQUAT_X     0.0f
 #define OFF_SQUAT_Y     60.0f        /* 下蹲收腿 */

@@ -60,7 +60,7 @@ void robot_control_init(void){
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
-    pid_init(&g_leg_speed_pid, 450.0f, 0.8f, 0.5f, ROBOT_CONTROL_DT, 90.0f, 10.0f);
+    pid_init(&g_leg_speed_pid, 250.0f, 0.2f, 0.00f, ROBOT_CONTROL_DT, 90.0f, 10.0f);
     pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
@@ -285,104 +285,157 @@ void control_task(void){
     leg_pid_control(&g_leg_right_pid, &g_leg_target_right,
                     &sensor_local, LEG_RIGHT, &g_motor_cmd);
 #endif
+
+    /* PWM 输出低通滤波, 抑制高频抖动 */
+    {
+        static float lm_filt = 0.0f, rm_filt = 0.0f;
+        static float lf_filt = 0.0f, lb_filt = 0.0f;
+        static float rf_filt = 0.0f, rb_filt = 0.0f;
+
+        lm_filt += 0.2f * (g_motor_cmd.left_motor_pwm       - lm_filt);
+        rm_filt += 0.2f * (g_motor_cmd.right_motor_pwm      - rm_filt);
+        lf_filt += 0.2f * (g_motor_cmd.left_front_joint_pwm  - lf_filt);
+        lb_filt += 0.2f * (g_motor_cmd.left_back_joint_pwm   - lb_filt);
+        rf_filt += 0.2f * (g_motor_cmd.right_front_joint_pwm - rf_filt);
+        rb_filt += 0.2f * (g_motor_cmd.right_back_joint_pwm  - rb_filt);
+
+        g_motor_cmd.left_motor_pwm       = (int)lm_filt;
+        g_motor_cmd.right_motor_pwm      = (int)rm_filt;
+        g_motor_cmd.left_front_joint_pwm  = (int)lf_filt;
+        g_motor_cmd.left_back_joint_pwm   = (int)lb_filt;
+        g_motor_cmd.right_front_joint_pwm = (int)rf_filt;
+        g_motor_cmd.right_back_joint_pwm  = (int)rb_filt;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
-/* 折返测试: 上电 10s 平衡 → 恒定速度前进 → 180°掉头 → 循环 */
-#define ZF_FWD_DIST_M      0.5f    /* 单程前进距离 (m) */
-#define ZF_FWD_SPEED       0.3f    /* 巡航速度 */
-#define ZF_TURN_RAD        M_PI    /* 180° (rad) */
-#define ZF_START_DELAY     10.0f   /* 启动等待 (s) */
-#define ZF_SEG_COUNT       8       /* 总段数 */
-#define ZF_FWD_TIMEOUT_MS  3000    /* 前进超时保护 (ms) */
-#define ZF_SETTLE_GYRO_TH  0.5f    /* 转弯后稳定阈值 (rad/s) */
+/* 折返测试: 平衡 → 前进 → 180°掉头 → 循环, 纯距离控制 */
+#define ZF_FWD_DIST_M      1.5f    /* 单程前进距离 (m) */
+#define ZF_FWD_SPEED       0.2f    /* 巡航速度 */
+#define ZF_START_DELAY     5.0f    /* 启动等待 (s) */
+#define ZF_SEG_COUNT       4       /* 总段数 (2个来回) */
 
-static void backforth_test(Move_cmd_t *cmd, const Sensor_data_t *sensor) {
-    static uint8_t  phase          = 0;   /* 0=前进, 1=掉头, 2=转弯后稳定 */
-    static uint8_t  count          = 0;
-    static uint32_t timer          = 0;
-    static float    fwd_dir        = 0.0f;
-    static float    elapsed        = 0.0f;
-    static bool     dir_locked     = false;
-    static float    segment_start_path = 0.0f;
-    /* 转弯状态 */
-    static float    prev_yaw       = 0.0f;
-    static float    turn_sum       = 0.0f;
-    static bool     turn_inited    = false;
+static void backforth_test(Move_cmd_t *cmd, const Sensor_data_t *sensor, float elapsed) {
+    static int  segment     = 0;   /* 当前段 0~(ZF_SEG_COUNT-1) */
+    static bool is_turning  = false;
+    static float start_path = 0.0f;
+    static float turn_sum   = 0.0f;
+    static float prev_yaw   = 0.0f;
 
-    elapsed += ROBOT_CONTROL_DT;
-
-    /* ── 上电先平衡 10s ── */
+    /* 启动延迟: 原地平衡 */
     if (elapsed < ZF_START_DELAY) {
-        cmd->target_direction = sensor->angle_yaw;
+        cmd->target_direction = 0.0f;
+        cmd->target_speed     = 0.0f;
+        cmd->target_distance  = 0.0f;
+        start_path = g_odom_path;  /* 同步里程起点 */
+        return;
+    }
+
+    /* 全部段完成 */
+    if (segment >= ZF_SEG_COUNT) {
+        float dir = (segment & 1) ? (float)M_PI : 0.0f;
+        cmd->target_direction = dir;
         cmd->target_speed     = 0.0f;
         cmd->target_distance  = 0.0f;
         return;
     }
 
-    /* ── 首次锁方向 ── */
-    if (!dir_locked) {
-        fwd_dir    = sensor->angle_yaw;
-        dir_locked = true;
-    }
-
-    if (count >= ZF_SEG_COUNT) {
-        cmd->target_speed    = 0.0f;
-        cmd->target_distance = 0.0f;
-        return;
-    }
-
-    switch (phase) {
-    case 0: /* 恒定速度前进 (距离控制) */
-        if (timer == 0) {
-            segment_start_path = g_odom_path;
-            pid_reset(&g_leg_speed_pid);
-        }
-        cmd->target_direction = fwd_dir;
+    if (!is_turning) {
+        /* ── 前进段 ── */
+        float dir = (segment & 1) ? (float)M_PI : 0.0f;  /* 段0→0, 段1→π, 段2→0, 段3→π */
+        cmd->target_direction = dir;
         cmd->target_speed     = ZF_FWD_SPEED;
         cmd->target_distance  = 0.0f;
-        if ((g_odom_path - segment_start_path) >= ZF_FWD_DIST_M
-            || timer >= ZF_FWD_TIMEOUT_MS) {
-            phase = 1; timer = 0;
-            turn_sum    = 0.0f;
-            turn_inited = false;
-            prev_yaw    = sensor->angle_yaw;
-            pid_reset(&g_leg_speed_pid);
+
+        if ((g_odom_path - start_path) >= ZF_FWD_DIST_M) {
+            is_turning = true;
+            turn_sum   = 0.0f;
+            prev_yaw   = sensor->angle_yaw;
         }
-        break;
-
-    case 1: /* 180°掉头, 方向交替 */
-        cmd->target_direction = fwd_dir + ((count & 1) ? ZF_TURN_RAD : -ZF_TURN_RAD);
-        while (cmd->target_direction >  M_PI) cmd->target_direction -= 2.0f * M_PI;
-        while (cmd->target_direction < -M_PI) cmd->target_direction += 2.0f * M_PI;
-        cmd->target_speed    = 0.0f;
-        cmd->target_distance = 0.0f;
-
-        if (turn_inited) {
-            float dy = sensor->angle_yaw - prev_yaw;
-            while (dy >  M_PI) dy -= 2.0f * M_PI;
-            while (dy < -M_PI) dy += 2.0f * M_PI;
-            turn_sum += fabsf(dy);
-        }
-        prev_yaw    = sensor->angle_yaw;
-        turn_inited = true;
-
-        if (turn_sum >= ZF_TURN_RAD * 0.95f) {
-            fwd_dir = sensor->angle_yaw;  /* 使用实际 yaw */
-            phase = 2; timer = 0;
-        }
-        break;
-
-    case 2: /* 转弯后稳定等待 */
-        cmd->target_direction = fwd_dir;
+    } else {
+        /* ── 掉头段 ── */
+        float target = (segment & 1) ? 0.0f : (float)M_PI;  /* 掉头到对面方向 */
+        cmd->target_direction = target;
         cmd->target_speed     = 0.0f;
         cmd->target_distance  = 0.0f;
-        if (fabsf(sensor->gyro_yaw) < ZF_SETTLE_GYRO_TH || timer > 500) {
-            phase = 0; count++; timer = 0;
+
+        float dy = sensor->angle_yaw - prev_yaw;
+        while (dy >  M_PI) dy -= 2.0f * (float)M_PI;
+        while (dy < -M_PI) dy += 2.0f * (float)M_PI;
+        turn_sum += fabsf(dy);
+        prev_yaw = sensor->angle_yaw;
+
+        if (turn_sum >= (float)M_PI * 0.95f) {
+            is_turning = false;
+            segment++;
+            start_path = g_odom_path;  /* 下一段从当前位置开始计里程 */
         }
-        break;
     }
-    timer++;
+}
+
+/*---------------------------------------------------------------------------*/
+/* 画方测试: 前进 → 右转90° → 循环, 纯距离控制 */
+#define SQ_FWD_DIST_M      1.0f    /* 单边前进距离 (m) */
+#define SQ_FWD_SPEED       0.2f    /* 巡航速度 */
+#define SQ_START_DELAY     5.0f    /* 启动等待 (s) */
+#define SQ_SEG_COUNT       8       /* 总段数 (2个正方形) */
+
+static void square_test(Move_cmd_t *cmd, const Sensor_data_t *sensor, float elapsed) {
+    static int  segment     = 0;
+    static bool is_turning  = false;
+    static float start_path = 0.0f;
+    static float turn_sum   = 0.0f;
+    static float prev_yaw   = 0.0f;
+    static float cur_dir    = 0.0f;  /* 当前前进方向 */
+
+    if (elapsed < SQ_START_DELAY) {
+        cmd->target_direction = 0.0f;
+        cmd->target_speed     = 0.0f;
+        cmd->target_distance  = 0.0f;
+        start_path = g_odom_path;
+        cur_dir    = 0.0f;
+        return;
+    }
+
+    if (segment >= SQ_SEG_COUNT) {
+        cmd->target_direction = cur_dir;
+        cmd->target_speed     = 0.0f;
+        cmd->target_distance  = 0.0f;
+        return;
+    }
+
+    if (!is_turning) {
+        /* ── 前进段 ── */
+        cmd->target_direction = cur_dir;
+        cmd->target_speed     = SQ_FWD_SPEED;
+        cmd->target_distance  = 0.0f;
+
+        if ((g_odom_path - start_path) >= SQ_FWD_DIST_M) {
+            is_turning = true;
+            turn_sum   = 0.0f;
+            prev_yaw   = sensor->angle_yaw;
+            cur_dir   += (float)M_PI_2;  /* 右转90° */
+            while (cur_dir >  M_PI) cur_dir -= 2.0f * (float)M_PI;
+            while (cur_dir < -M_PI) cur_dir += 2.0f * (float)M_PI;
+        }
+    } else {
+        /* ── 右转90° ── */
+        cmd->target_direction = cur_dir;
+        cmd->target_speed     = 0.0f;
+        cmd->target_distance  = 0.0f;
+
+        float dy = sensor->angle_yaw - prev_yaw;
+        while (dy >  M_PI) dy -= 2.0f * (float)M_PI;
+        while (dy < -M_PI) dy += 2.0f * (float)M_PI;
+        turn_sum += fabsf(dy);
+        prev_yaw = sensor->angle_yaw;
+
+        if (turn_sum >= (float)M_PI_2 * 0.95f) {
+            is_turning = false;
+            segment++;
+            start_path = g_odom_path;
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -396,20 +449,18 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
     sensor->gyro_roll      = ctrl->gyro_roll_rate;
     sensor->accel_z        = 0.0f;
-    //驱动轮速度 (UART4) 和关节角度 (UART6 左腿, UART3 右腿)
+
+    /* 上电第一次读到的 yaw 作为 0 点 */
     {
-        static float motor_left_filt  = 0.0f;
-        static float motor_right_filt = 0.0f;
-
-        float left_raw  = (float)small_driver_value.receive_left_speed_data * RPM_TO_RADPS;
-        float right_raw = (float)small_driver_value.receive_right_speed_data * RPM_TO_RADPS * RIGHT_MOTOR_DIR;
-
-        /* 一阶低通: α=0.2, fc≈35Hz @1kHz, 滤除高频电噪声 */
-        motor_left_filt  += 0.2f * (left_raw  - motor_left_filt);
-        motor_right_filt += 0.2f * (right_raw - motor_right_filt);
-
-        sensor->motor_left_speed  = motor_left_filt;
-        sensor->motor_right_speed = motor_right_filt;
+        static float yaw_zero = 0.0f;
+        static bool  yaw_zero_set = false;
+        if (!yaw_zero_set) {
+            yaw_zero = sensor->angle_yaw;
+            yaw_zero_set = true;
+        }
+        sensor->angle_yaw -= yaw_zero;
+        while (sensor->angle_yaw >  M_PI) sensor->angle_yaw -= 2.0f * M_PI;
+        while (sensor->angle_yaw < -M_PI) sensor->angle_yaw += 2.0f * M_PI;
     }
 
     /* ── 里程计: 角度差分弧线积分 (x, y, θ) ── */
@@ -436,8 +487,20 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
             if (dr >  180.0f) dr -= 360.0f;
             prev_l = left_deg; prev_r = right_deg;
 
-            /* 平均角增量 → 线距离 (m) */
-            dist = ((dl + dr) / 2.0f) * DEG_TO_RAD * LEG_WHEEL_RADIUS * 0.001f;
+            /* 轮速由角度差分计算 (rad/s), 不查询0x02避免切换驱动板通信模式 */
+            {
+                static float motor_left_filt  = 0.0f;
+                static float motor_right_filt = 0.0f;
+                float left_raw  = dl * DEG_TO_RAD / ROBOT_CONTROL_DT;
+                float right_raw = dr * DEG_TO_RAD / ROBOT_CONTROL_DT * RIGHT_MOTOR_DIR;
+                motor_left_filt  += 0.2f * (left_raw  - motor_left_filt);
+                motor_right_filt += 0.2f * (right_raw - motor_right_filt);
+                sensor->motor_left_speed  = motor_left_filt;
+                sensor->motor_right_speed = motor_right_filt;
+            }
+
+            /* 平均角增量 → 线距离 (m), 右轮镜像需乘 RIGHT_MOTOR_DIR */
+            dist = ((dl + dr * RIGHT_MOTOR_DIR) / 2.0f) * DEG_TO_RAD * LEG_WHEEL_RADIUS * 0.001f;
 
             /* 路径用绝对值积分 */
             g_odom_path += fabsf(dist) * g_odom_scale;
@@ -469,22 +532,22 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->joint_right_front_angle = (float)small_driver_value_leg_right.receive_left_location_data * DEG_TO_RAD;
     sensor->joint_right_back_angle  = (float)small_driver_value_leg_right.receive_right_location_data * DEG_TO_RAD;
 
-    //应用标定
-    if (angle_offset_is_done()) {
-        angle_offset_apply_to_sensor(sensor);
-    }
-
     /* 关节角度低通滤波, 滤除编码器量化噪声, 避免差分速度放大噪声 */
     {
         static float lf_filt = 0.0f, lb_filt = 0.0f, rf_filt = 0.0f, rb_filt = 0.0f;
-        lf_filt += 0.2f * (sensor->joint_left_front_angle  - lf_filt);
-        lb_filt += 0.2f * (sensor->joint_left_back_angle   - lb_filt);
-        rf_filt += 0.2f * (sensor->joint_right_front_angle - rf_filt);
-        rb_filt += 0.2f * (sensor->joint_right_back_angle  - rb_filt);
+        lf_filt += 0.1f * (sensor->joint_left_front_angle  - lf_filt);
+        lb_filt += 0.1f * (sensor->joint_left_back_angle   - lb_filt);
+        rf_filt += 0.1f * (sensor->joint_right_front_angle - rf_filt);
+        rb_filt += 0.1f * (sensor->joint_right_back_angle  - rb_filt);
         sensor->joint_left_front_angle  = lf_filt;
         sensor->joint_left_back_angle   = lb_filt;
         sensor->joint_right_front_angle = rf_filt;
         sensor->joint_right_back_angle  = rb_filt;
+    }
+
+    //应用标定
+    if (angle_offset_is_done()) {
+        angle_offset_apply_to_sensor(sensor);
     }
 
     /* 关节速度由位置差分获得（驱动板持续回传位置数据） */
@@ -511,9 +574,23 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     }
 
     cmd->target_height    = 0.0f;
-    cmd->target_direction = 0.0f;
     cmd->target_distance  = 0.0f;
 
-    /* 折返测试 */
-    backforth_test(cmd, sensor);
+    /* 标定完成后才开始计时, 避免标定期消耗折返测试的启动延迟 */
+    {
+        static float bf_elapsed    = 0.0f;
+        static bool  bf_was_done   = false;
+        if (angle_offset_is_done()) {
+            if (!bf_was_done) {
+                bf_elapsed  = 0.0f;
+                bf_was_done = true;
+            }
+            bf_elapsed += ROBOT_CONTROL_DT;
+        } else {
+            bf_was_done = false;
+        }
+
+        /* 画方测试: 使用外部计时 */
+        square_test(cmd, sensor, bf_elapsed);
+    }
 }

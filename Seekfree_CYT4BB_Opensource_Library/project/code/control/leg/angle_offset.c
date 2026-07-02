@@ -2,7 +2,7 @@
 #include <string.h>
 
 const AngleOffset_Config_t g_angle_offset_default_cfg = {
-    .homing_pwm           = 900,         /* 标定时撞限位用的占空比 (20%) */
+    .homing_pwm           = 1100,         /* 标定时撞限位用的占空比 (20%) */
     .stall_cycles         = 80,           /* 判定堵转的时长 (周期数)       */
     .settle_cycles        = 100,          /* 每个关节开始前等待 100ms      */
     .timeout_cycles       = 30000,        /* 整体超时 30s                 */

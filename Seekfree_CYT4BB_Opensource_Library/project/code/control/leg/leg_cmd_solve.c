@@ -24,18 +24,6 @@ void leg_cmd_solve(const Move_cmd_t *move_cmd,
     float x_target    = pid_calculate(pid_leg_speed, move_cmd->target_speed, speed_norm);
     x_target          = CLAMP(x_target, -FOOT_X_OFFSET_MAX, FOOT_X_OFFSET_MAX);
 
-    /* 死区平滑: 目标速度≈0 且实际速度很小时, 缩放足端输出
-     * 避免速度环与平衡环在静止时互相抢控制权导致一卡一卡 */
-    if (fabsf(move_cmd->target_speed) < 0.01f) {
-        float speed_err = fabsf(move_cmd->target_speed - speed_norm);
-        if (speed_err < 0.05f) {
-            float scale = speed_err / 0.05f;
-            x_target *= scale * scale;
-            pid_leg_speed->integral   = 0.0f;
-            pid_leg_speed->prev_error = 0.0f;
-        }
-    }
-
     foot_position_left->x  = x_target;
     foot_position_right->x = -x_target;
 
