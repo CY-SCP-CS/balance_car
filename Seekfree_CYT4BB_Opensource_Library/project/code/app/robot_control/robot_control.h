@@ -2,11 +2,10 @@
 #define ROBOT_CONTROL_H
 #include "../../common/types.h"
 #include "../../control/leg/leg_cmd_solve.h"
+#include "../../control/leg/leg_pid_control.h"
 #include "../../control/leg/vmc_calculate.h"
 #include "../../control/balance/pitch_balance.h"
 #include "../../lib/pid/pid_calculate.h"
-
-#define DEG_TO_RAD (3.1415926f / 180.0f)
 
 extern Motor_cmd_duty_t g_motor_cmd;
 
@@ -14,10 +13,17 @@ extern Sensor_data_t g_sensor_data;
 
 extern Move_cmd_t g_move_cmd;
 
+/* Ctrl_Input_t 供 ISR 中访问 */
+extern Ctrl_Input_t g_ctrl;
+
 /* 俯仰平衡 PID (jump.c 需要共享) */
 extern PID_Controller_t g_speed_pid;
 extern PID_Controller_t g_pitch_angle_pid;
 extern PID_Controller_t g_pitch_gyro_pid;
+
+/* 偏航角速度 PID (jump.c 需要共享) */
+extern PID_Controller_t g_yaw_angle_pid;
+extern PID_Controller_t g_yaw_pid;
 
 void robot_control_init(void);
 
@@ -30,5 +36,20 @@ void control_task(void);
 void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd_t *cmd);
 
 void robot_control_reset_balance_pid(void);
+
+/* 公共辅助: 标称位形 + 雅可比求解 → 关节目标 (供 jump.c 复用) */
+void leg_offset_to_joint_target(LegSide_t side,
+    const Foot_position_t *foot_pos, Leg_Target_t *target);
+
+/* 腿速度环 + 横滚补偿 (供 jump.c 地面相位复用) */
+void robot_control_leg_speed_feedback(const Sensor_data_t *sensor,
+    Foot_position_t *left, Foot_position_t *right);
+
+/* 里程计: 弧线积分位姿 (x,y,θ) + 路径长度 */
+float robot_control_get_x(void);
+float robot_control_get_y(void);
+float robot_control_get_theta(void);
+float robot_control_get_distance(void);
+float robot_control_get_yaw(void);
 
 #endif /* ROBOT_CONTROL_H */

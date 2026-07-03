@@ -1,5 +1,5 @@
-#ifndef _JUMP_H
-#define _JUMP_H
+#ifndef JUMP_H
+#define JUMP_H
 
 #include "../../common/types.h"
 #include "types.h"
@@ -33,4 +33,4 @@ bool jump_is_done(void);     /* 跳跃是否已全部结束 */
  */
 void jump_control(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cmd);
 
-#endif /* _JUMP_H */
+#endif /* JUMP_H */

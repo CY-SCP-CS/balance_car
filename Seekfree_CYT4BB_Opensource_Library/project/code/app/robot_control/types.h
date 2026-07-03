@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include "../../common/types.h"
+
 /* 传感器数据 —— 各控制模块的统一输入 */
 typedef struct
 {
@@ -41,9 +43,11 @@ typedef struct
 
 typedef struct
 {
-    float target_speed;     /* 速度    [-1, +1] */
-    float target_height;    /* AI给的，暂时没用，保留 [-1, +1] */
-    float target_roll;      /* 压弯    [-1, +1] */
+    float target_direction; /* 目标偏航角 (rad), 绝对朝向, 外部输入 */
+    float target_distance;  /* 剩余距离 (m), 外部输入, 0=不使用 */
+    float target_speed;     /* 速度    [-1, +1], 内部计算 */
+    float target_roll;      /* 压弯    [-1, +1], 内部自动计算 */
+    float target_height;    /* 高度    [-1, +1] */
 } Move_cmd_t;
 
 /* 足端笛卡尔坐标 */
@@ -91,5 +95,13 @@ typedef struct
 
 /* 控制周期 */
 #define ROBOT_CONTROL_DT        0.001f
+
+/* 差速转向 */
+#define MAX_YAW_RATE            3.0f    /* 最大目标偏航角速度 (rad/s) */
+
+/* 安全保护阈值 */
+#define SAFE_PITCH_MAX_DEG   45.0f      /* 俯仰角保护 (deg) */
+#define SAFE_ROLL_MAX_DEG    35.0f      /* 横滚角保护 (deg) */
+#define SAFE_JOINT_MAX_RAD   2.618f     /* 关节最大转角 = 150° (rad, 相对限位) */
 
 #endif /* TYPES_H */

@@ -35,10 +35,11 @@ void leg_pid_control(Leg_PID_t *pid,
     int pwm_back  = (int)back_out;
 
     if (side == LEG_LEFT) {
-
+        /* PWM 取反链路：此处取反一次，cm7_0_isr.c:93-94 再取反一次，最终输出 = 正向 */
         motor_cmd->left_front_joint_pwm = -pwm_front;
         motor_cmd->left_back_joint_pwm  = -pwm_back;
     } else {
+        /* 同上，右腿也在 ISR 中取反 (cm7_0_isr.c:95-96) */
         motor_cmd->right_front_joint_pwm = -pwm_front;
         motor_cmd->right_back_joint_pwm  = -pwm_back;
     }

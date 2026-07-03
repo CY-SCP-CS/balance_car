@@ -4,12 +4,6 @@
 /* PWM 输出限幅值 */
 #define VMC_PWM_CLAMP_MAX   10000
 
-static inline float clamp(float value, float min, float max){
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-}
-
 /* 只清零当前腿的关节电机，另一条腿保持输出 */
 static inline void vmc_clear_leg(LegSide_t leg_side, Motor_cmd_duty_t *motor_cmd){
     if (leg_side == LEG_LEFT) {
@@ -56,8 +50,8 @@ void vmc_calculate(const VMC_Config_t *vmc_cfg,
     float tau_back = J[0][1] * Fx + J[1][1] * Fy;
 
     /* 5. 输出限幅 + 四舍五入（按左右腿选择输出通道） */
-    tau_front  = clamp(tau_front,  -VMC_PWM_CLAMP_MAX, VMC_PWM_CLAMP_MAX);
-    tau_back = clamp(tau_back, -VMC_PWM_CLAMP_MAX, VMC_PWM_CLAMP_MAX);
+    tau_front  = CLAMP(tau_front,  -VMC_PWM_CLAMP_MAX, VMC_PWM_CLAMP_MAX);
+    tau_back = CLAMP(tau_back, -VMC_PWM_CLAMP_MAX, VMC_PWM_CLAMP_MAX);
     int pwm_front = ROUND(tau_front);
     int pwm_back  = ROUND(tau_back);
 
