@@ -3,8 +3,15 @@
 #include "../../../../libraries/zf_device/zf_device_mt9v03x.h"
 #include "line_detect.h"
 #include "obstacle_detect.h"
+#include "minefield_detect.h"
+#include "stair_detect.h"
+#include "bridge_detect.h"
 
 static Vision_Result_t g_last_result;
+static Vision_Mode_t   g_mode = VISION_MODE_LINE;
+
+/* target wedge index managed externally and passed on each update */
+static uint8 g_bridge_target_wedge = 0u;
 
 void vision_init(void)
 {
@@ -16,6 +23,26 @@ void vision_init(void)
     g_last_result.landmark_offset      = 0.0f;
     g_last_result.landmark_confidence  = 0u;
     g_last_result.obstacle_close       = false;
+
+    g_last_result.minefield.detected   = false;
+    g_last_result.stair.detected       = false;
+    g_last_result.bridge.wedge_count   = 0u;
+
+    g_mode = VISION_MODE_LINE;
+    g_bridge_target_wedge = 0u;
+}
+
+void vision_set_mode(Vision_Mode_t mode)
+{
+    g_mode = mode;
+    if (mode == VISION_MODE_BRIDGE) {
+        g_bridge_target_wedge = 0u;
+    }
+}
+
+Vision_Mode_t vision_get_mode(void)
+{
+    return g_mode;
 }
 
 bool vision_update(Vision_Result_t *result)
@@ -41,6 +68,20 @@ bool vision_update(Vision_Result_t *result)
     g_last_result.landmark_offset     = obs.landmark_offset;
     g_last_result.landmark_confidence = obs.landmark_confidence;
     g_last_result.obstacle_close      = obs.obstacle_close;
+
+    switch (g_mode) {
+    case VISION_MODE_MINEFIELD:
+        minefield_detect(mt9v03x_image, &g_last_result.minefield);
+        break;
+    case VISION_MODE_BRIDGE:
+        bridge_detect(mt9v03x_image, g_bridge_target_wedge, &g_last_result.bridge);
+        break;
+    case VISION_MODE_STAIR:
+        stair_detect(mt9v03x_image, &g_last_result.stair);
+        break;
+    default:
+        break;
+    }
 
     if (result != NULL) {
         *result = g_last_result;

@@ -42,4 +42,26 @@
 #define VISION_STEP_ROW_B           65u
 #define VISION_STEP_EDGE_THRESH     40u   /* mean brightness difference to confirm step */
 
+/* ---- Minefield (white border, blue/dark background) ---- */
+#define VISION_MF_WHITE_THRESH      160u  /* pixel counts as white border above this */
+#define VISION_MF_MIN_WHITE_PX      10u   /* min white pixels per col/row to count as edge */
+#define VISION_MF_DANGER_MARGIN     20u   /* pixels from frame edge → trigger near-warning */
+
+/* ---- Stair (blue middle step, grayscale intensity band) ---- */
+#define VISION_STAIR_LO_THRESH      80u   /* lower grayscale bound for blue step; calibrate on site */
+#define VISION_STAIR_HI_THRESH      160u  /* upper grayscale bound */
+#define VISION_STAIR_MIN_COLS       40u   /* min pixels per row to count as stair row */
+#define VISION_STAIR_ROI_TOP        20u
+#define VISION_STAIR_ROI_BOT        100u
+#define VISION_STAIR_HEIGHT_CM      10.0f /* physical height of one step; measure before race */
+#define VISION_STAIR_FOCAL_CONST    600.0f/* calibrated: HEIGHT_CM * f_px; fill after calibration */
+
+/* ---- Bridge (black wedges on white PVC) ---- */
+#define VISION_BRIDGE_DARK_THRESH   60u   /* pixel counts as black wedge below this */
+#define VISION_BRIDGE_WEDGE_MIN_W   4u    /* min wedge width in pixels */
+#define VISION_BRIDGE_WEDGE_MAX_W   30u   /* max wedge width in pixels */
+#define VISION_BRIDGE_ROI_TOP       60u   /* ROI covering bridge surface (lower half of frame) */
+#define VISION_BRIDGE_ROI_BOT       100u
+#define VISION_BRIDGE_ALIGN_THRESH  0.08f /* |lateral_offset| < this → aligned */
+
 #endif

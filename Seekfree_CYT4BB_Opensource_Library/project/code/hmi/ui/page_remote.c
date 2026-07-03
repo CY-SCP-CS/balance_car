@@ -4,10 +4,14 @@
 #include "seekfree_assistant_interface.h"
 #include "zf_device_wifi_spi.h"
 #include "zf_device_mt9v03x.h"
+#include "../../app/vision/vision_annotate.h"
 
 #define RAD_TO_DEG  (180.0f / 3.14159265f)
 
 static float *g_bindings[REMOTE_PARAM_CHANNELS];
+
+/* Annotated image buffer — same size as camera frame */
+static uint8 g_annotated_image[MT9V03X_H][MT9V03X_W];
 
 void remote_page_init(void)
 {
@@ -18,7 +22,7 @@ void remote_page_init(void)
 
     seekfree_assistant_camera_information_config(
         SEEKFREE_ASSISTANT_MT9V03X,
-        mt9v03x_image,
+        g_annotated_image,
         MT9V03X_W,
         MT9V03X_H);
 }
@@ -49,6 +53,11 @@ void remote_page_update(const Ctrl_Input_t    *fb,
                         const Vision_Result_t *vision)
 {
     apply_remote_params();
+
+    if (vision != NULL) {
+        vision_annotate(g_annotated_image, mt9v03x_image,
+                        vision, vision_get_mode());
+    }
 
     seekfree_assistant_camera_send();
 
