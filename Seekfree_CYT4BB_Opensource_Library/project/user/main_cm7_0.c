@@ -6,6 +6,7 @@
 #include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
+#include "../code/app/remote/remote_comm.h"
 #include "../code/control/leg/angle_offset.h"
 
 static Ctrl_Input_t   g_ctrl;
@@ -35,6 +36,7 @@ int main(void)
    // ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
 
     small_driver_uart_init();
+    remote_comm_init();
     robot_control_init();
 
     angle_offset_start(NULL);               // 标定全部四个关节 (左前/左后/右前/右后)
@@ -68,6 +70,7 @@ int main(void)
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
         Nav_Output_t nav_out = nav_update(&g_nav_input);
         nav_apply_ctrl(&g_ctrl, &nav_out);
+        remote_comm_update(&g_ctrl);
 
         small_driver_get_speed(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);

@@ -230,7 +230,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed  = -0.0f;//ctrl->velocity_cmd;
-    cmd->target_roll   = 0.0f;//ctrl->steering_cmd;
+    cmd->target_speed  = ctrl->velocity_cmd;
+    cmd->target_roll   = ctrl->steering_cmd;
     cmd->target_height = 0.0f;
 }
