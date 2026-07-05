@@ -35,7 +35,7 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
  *  USE_VMC = 1 : 修复后的 VMC 方案 (需现场调参)
  */
 #define USE_VMC 0
-#define REMOTE_STEER_GAIN_RAD 0.70f
+#define REMOTE_STEER_GAIN_RAD 0.50f
 
 /* 腿部关节 PID 控制器 */
 static Leg_PID_t g_leg_left_pid, g_leg_right_pid;

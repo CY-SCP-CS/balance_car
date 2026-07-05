@@ -3,8 +3,11 @@
 #include "remote_protocol.h"
 #include "zf_device_lora3a22.h"
 
+#define REMOTE_LPF_ALPHA 0.25f
+
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
+static float g_remote_filtered_joystick[4];
 
 static float remote_absf(float value)
 {
@@ -47,6 +50,7 @@ static int16 remote_get_raw_joystick(uint8 channel)
 void remote_comm_init(void)
 {
     memset(&g_remote_state, 0, sizeof(g_remote_state));
+    memset(g_remote_filtered_joystick, 0, sizeof(g_remote_filtered_joystick));
     g_remote_timeout_ms = REMOTE_LORA_TIMEOUT_MS;
     lora3a22_init();
 }
@@ -59,8 +63,9 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         lora3a22_finsh_flag = 0;
 
         for (uint8 i = 0u; i < 4u; i++) {
-            g_remote_state.joystick[i] =
-                remote_normalize_joystick(remote_get_raw_joystick(i));
+            float raw_value = remote_normalize_joystick(remote_get_raw_joystick(i));
+            g_remote_filtered_joystick[i] += (raw_value - g_remote_filtered_joystick[i]) * REMOTE_LPF_ALPHA;
+            g_remote_state.joystick[i] = g_remote_filtered_joystick[i];
             g_remote_state.key[i] = lora3a22_uart_transfer.key[i];
             g_remote_state.switch_key[i] = lora3a22_uart_transfer.switch_key[i];
         }
@@ -74,6 +79,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         g_remote_state.connected = false;
         for (uint8 i = 0u; i < 4u; i++) {
             g_remote_state.joystick[i] = 0.0f;
+            g_remote_filtered_joystick[i] = 0.0f;
         }
     }
 
