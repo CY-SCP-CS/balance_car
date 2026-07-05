@@ -1168,16 +1168,40 @@
             <group>
                 <name>vision</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\bridge_detect.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\bridge_detect.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\line_detect.c</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\line_detect.h</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\minefield_detect.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\minefield_detect.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\obstacle_detect.c</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\obstacle_detect.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\stair_detect.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\stair_detect.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\vision_annotate.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\vision_annotate.h</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\vision_pipeline.c</name>
