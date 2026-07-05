@@ -2,9 +2,7 @@
 #define HMI_PAGE_REMOTE_H
 
 #include "zf_common_typedef.h"
-#include "../../common/types.h"
-#include "../../app/navigation/nav_engine.h"
-#include "../../app/vision/vision_pipeline.h"
+#include "ui_common.h"
 
 #define REMOTE_WIFI_SSID        "your_ssid"
 #define REMOTE_WIFI_PASSWORD    "your_password"
@@ -14,11 +12,8 @@
 
 #define REMOTE_PARAM_CHANNELS   8u
 
-void remote_page_init(void);
+void page_remote_init(void);
 void remote_param_bind(uint8 channel, float *target);
-void remote_page_update(const Ctrl_Input_t    *fb,
-                        const Nav_Input_t     *nav_input,
-                        const Nav_Output_t    *nav_output,
-                        const Vision_Result_t *vision);
+void page_remote_update(const UI_Frame_t *frame);
 
 #endif

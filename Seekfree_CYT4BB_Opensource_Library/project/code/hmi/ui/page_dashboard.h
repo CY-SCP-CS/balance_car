@@ -1,11 +1,8 @@
 #ifndef HMI_PAGE_DASHBOARD_H
 #define HMI_PAGE_DASHBOARD_H
 
-#include "../../common/types.h"
-#include "../../app/navigation/nav_engine.h"
+#include "ui_common.h"
 
-void dashboard_update(const Ctrl_Input_t *fb,
-                      const Nav_Input_t *nav_input,
-                      const Nav_Output_t *nav_output);
+void page_dashboard_update(const UI_Frame_t *frame);
 
 #endif

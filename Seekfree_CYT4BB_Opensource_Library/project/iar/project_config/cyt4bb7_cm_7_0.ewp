@@ -1297,16 +1297,13 @@
                     <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav_debug.h</name>
                 </file>
                 <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_pid.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_pid.h</name>
-                </file>
-                <file>
                     <name>$PROJ_DIR$\..\..\code\hmi\ui\page_remote.c</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\hmi\ui\page_remote.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_common.h</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_manager.c</name>

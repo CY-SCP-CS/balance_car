@@ -1,8 +1,8 @@
 #ifndef HMI_PAGE_NAV_DEBUG_H
 #define HMI_PAGE_NAV_DEBUG_H
 
-#include "../../app/navigation/nav_engine.h"
+#include "ui_common.h"
 
-void nav_debug_display_update(const Nav_Input_t *input);
+void page_nav_debug_update(const UI_Frame_t *frame);
 
 #endif

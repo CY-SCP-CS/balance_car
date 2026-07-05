@@ -9,8 +9,8 @@ typedef enum {
     UI_PAGE_DASHBOARD,
     UI_PAGE_IMU_DEBUG,
     UI_PAGE_NAV_DEBUG,
-    UI_PAGE_PID_DEBUG,
     UI_PAGE_REMOTE,
+    UI_PAGE_COUNT,
 } UI_Page_t;
 
 void ui_init(UI_Page_t page);

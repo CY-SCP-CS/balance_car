@@ -6,14 +6,12 @@
 #include "zf_device_mt9v03x.h"
 #include "../../app/vision/vision_annotate.h"
 
-#define RAD_TO_DEG  (180.0f / 3.14159265f)
-
 static float *g_bindings[REMOTE_PARAM_CHANNELS];
 
 /* Annotated image buffer — same size as camera frame */
 static uint8 g_annotated_image[MT9V03X_H][MT9V03X_W];
 
-void remote_page_init(void)
+void page_remote_init(void)
 {
     wifi_spi_init(REMOTE_WIFI_SSID, REMOTE_WIFI_PASSWORD);
     wifi_spi_socket_connect("TCP", REMOTE_TARGET_IP, REMOTE_TARGET_PORT, REMOTE_LOCAL_PORT);
@@ -47,36 +45,27 @@ static void apply_remote_params(void)
     }
 }
 
-void remote_page_update(const Ctrl_Input_t    *fb,
-                        const Nav_Input_t     *nav_input,
-                        const Nav_Output_t    *nav_output,
-                        const Vision_Result_t *vision)
+void page_remote_update(const UI_Frame_t *frame)
 {
     apply_remote_params();
 
-    if (vision != NULL) {
+    if (frame->vision != NULL) {
         vision_annotate(g_annotated_image, mt9v03x_image,
-                        vision, vision_get_mode());
+                        frame->vision, vision_get_mode());
     }
 
     seekfree_assistant_camera_send();
 
-    Nav_State_t state = nav_get_state();
+    const Ctrl_Input_t    *fb         = frame->fb;
+    const Nav_Output_t    *nav_output = frame->nav_output;
+    const Vision_Result_t *vision     = frame->vision;
+    Nav_State_t             state     = nav_get_state();
 
-    seekfree_assistant_oscilloscope_data.channel_num = 6;
-    seekfree_assistant_oscilloscope_data.data[0] =
-        fb != NULL ? fb->body_pitch * RAD_TO_DEG : 0.0f;
-    seekfree_assistant_oscilloscope_data.data[1] =
-        fb != NULL ? fb->body_roll * RAD_TO_DEG : 0.0f;
-    seekfree_assistant_oscilloscope_data.data[2] =
-        fb != NULL ? fb->gyro_pitch_rate : 0.0f;
-    seekfree_assistant_oscilloscope_data.data[3] =
-        nav_output != NULL ? nav_output->velocity_cmd : 0.0f;
-    seekfree_assistant_oscilloscope_data.data[4] =
-        vision != NULL ? vision->line_offset : 0.0f;
-    seekfree_assistant_oscilloscope_data.data[5] =
-        (nav_output != NULL && nav_output->safety_stop) ? -1.0f : (float)state.segment_index;
-
-    (void)nav_input;
-    seekfree_assistant_oscilloscope_send(&seekfree_assistant_oscilloscope_data);
+    ui_scope6_send(
+        fb != NULL ? fb->body_pitch * UI_RAD_TO_DEG : 0.0f,
+        fb != NULL ? fb->body_roll * UI_RAD_TO_DEG : 0.0f,
+        fb != NULL ? fb->gyro_pitch_rate : 0.0f,
+        nav_output != NULL ? nav_output->velocity_cmd : 0.0f,
+        vision != NULL ? vision->line_offset : 0.0f,
+        ui_segment_or_stop(nav_output, state.segment_index));
 }
