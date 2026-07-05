@@ -439,6 +439,8 @@ static void square_test(Move_cmd_t *cmd, const Sensor_data_t *sensor, float elap
 }
 
 /*---------------------------------------------------------------------------*/
+#define ENABLE_SQUARE_TEST 0
+
 void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd_t *cmd){
 
     /* --- 传感器数据桥接 --- */
@@ -577,7 +579,9 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     cmd->target_roll      = ctrl->steering_cmd;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
+    cmd->target_direction = sensor->angle_yaw;
 
+#if ENABLE_SQUARE_TEST
     /* 标定完成后才开始计时, 避免标定期消耗折返测试的启动延迟 */
     {
         static float bf_elapsed    = 0.0f;
@@ -595,4 +599,5 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         /* 画方测试: 使用外部计时 */
         square_test(cmd, sensor, bf_elapsed);
     }
+#endif
 }
