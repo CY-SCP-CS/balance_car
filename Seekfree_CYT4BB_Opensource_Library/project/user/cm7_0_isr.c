@@ -71,7 +71,8 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
     } else if (!angle_offset_is_done()) {
 
         /* 标定逻辑在 ISR 中以 1ms 周期运行（依赖其内部 timeout/stall 计数） */
-        angle_offset_process(&g_sensor_data, &g_motor_cmd);
+        const Sensor_data_t *sensor = &g_sensor_data;
+        angle_offset_process(sensor, &g_motor_cmd);
         small_driver_set_duty(&small_driver_value, 0, 0);   /* 标定期间驱动轮停止 */
         small_driver_set_duty(&small_driver_value_leg_left,
             -g_motor_cmd.left_front_joint_pwm,
@@ -83,6 +84,11 @@ void pit0_ch1_isr()                     // ��ʱ��ͨ�� 1 ����
 
         control_task();
 
+        /* PWM 符号链路说明：
+         * - leg_pid_control() 已对关节 PWM 取反一次 (leg_pid_control.c:39-44)
+         * - 此处 small_driver_set_duty 再取反一次，最终输出 = 正向原值
+         * - 驱动轮 PWM 不需此转换，直接透传
+         */
         /*small_driver_set_duty(&small_driver_value,
             -g_motor_cmd.left_motor_pwm,
             -g_motor_cmd.right_motor_pwm);*/

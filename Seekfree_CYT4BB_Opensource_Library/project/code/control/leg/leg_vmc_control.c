@@ -1,22 +1,6 @@
 #include "leg_vmc_control.h"
 #include "jacobian.h"
 #include "vmc_calculate.h"
-#include <math.h>
-
-/* ─── 标称位形偏置 (与 PID 方案保持一致) ─── */
-#define LEG_NOM_FRONT_L      0.5f
-#define LEG_NOM_BACK_L      -0.5f
-#define LEG_NOM_FRONT_R     -0.5f
-#define LEG_NOM_BACK_R       0.5f
-
-/* 右腿镜像安装符号 (与 PID 方案保持一致) */
-#define RIGHT_ABS_FRONT_SIGN  -1.0f
-#define RIGHT_ABS_BACK_SIGN   -1.0f
-
-#ifndef M_PI
-#define M_PI  3.141592653589793f
-#endif
-#define M_PI_2  (M_PI / 2.0f)
 
 /* VMC 虚拟刚度/阻尼默认值 */
 #define VMC_KP_DEFAULT       0.3f
