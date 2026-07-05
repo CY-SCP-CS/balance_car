@@ -81,9 +81,12 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         return;
     }
 
-    /* 遥控手柄的前后轴方向与车体前进方向相反，取反后更符合预期。 */
+    /* 依据遥控协议注释：
+     * joystick[0] = 左摇杆 X（左右）
+     * joystick[1] = 左摇杆 Y（前后）
+     * 这里把左摇杆前后控制速度，左右控制转向。 */
     ctrl->velocity_cmd = -g_remote_state.joystick[1];
-    ctrl->steering_cmd = -g_remote_state.joystick[2];
+    ctrl->steering_cmd = -g_remote_state.joystick[0];
 }
 
 const Remote_State_t *remote_comm_get_state(void)
