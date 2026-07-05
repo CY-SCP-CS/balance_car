@@ -81,8 +81,9 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         return;
     }
 
-    ctrl->velocity_cmd = g_remote_state.joystick[1];
-    ctrl->steering_cmd = g_remote_state.joystick[2];
+    /* 遥控手柄的前后轴方向与车体前进方向相反，取反后更符合预期。 */
+    ctrl->velocity_cmd = -g_remote_state.joystick[1];
+    ctrl->steering_cmd = -g_remote_state.joystick[2];
 }
 
 const Remote_State_t *remote_comm_get_state(void)

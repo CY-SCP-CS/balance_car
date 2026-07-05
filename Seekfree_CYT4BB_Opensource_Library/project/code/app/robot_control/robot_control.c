@@ -35,6 +35,7 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
  *  USE_VMC = 1 : 修复后的 VMC 方案 (需现场调参)
  */
 #define USE_VMC 0
+#define REMOTE_STEER_GAIN_RAD 0.70f
 
 /* 腿部关节 PID 控制器 */
 static Leg_PID_t g_leg_left_pid, g_leg_right_pid;
@@ -576,10 +577,10 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     }
 
     cmd->target_speed     = ctrl->velocity_cmd;
-    cmd->target_roll      = ctrl->steering_cmd;
+    cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
-    cmd->target_direction = sensor->angle_yaw;
+    cmd->target_direction = sensor->angle_yaw + ctrl->steering_cmd * REMOTE_STEER_GAIN_RAD;
 
 #if ENABLE_SQUARE_TEST
     /* 标定完成后才开始计时, 避免标定期消耗折返测试的启动延迟 */
