@@ -1118,18 +1118,6 @@
         <group>
             <name>app</name>
             <group>
-                <name>mode</name>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\app\mode\mode_defs.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\app\mode\mode_manager.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\app\mode\mode_manager.h</name>
-                </file>
-            </group>
-            <group>
                 <name>navigation</name>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_engine.c</name>
@@ -1140,12 +1128,6 @@
             </group>
             <group>
                 <name>param</name>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\app\param\param_manager.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\app\param\param_manager.h</name>
-                </file>
             </group>
             <group>
                 <name>remote</name>
