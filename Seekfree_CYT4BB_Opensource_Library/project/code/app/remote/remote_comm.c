@@ -3,11 +3,15 @@
 #include "remote_protocol.h"
 #include "zf_device_lora3a22.h"
 
-#define REMOTE_LPF_ALPHA 0.25f
+#define REMOTE_LPF_ALPHA       0.25f
+#define REMOTE_FF_GAIN_BASE    0.25f
+#define REMOTE_FF_GAIN_SCALE   0.20f
 
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
 static float g_remote_filtered_joystick[4];
+static float g_remote_prev_velocity_cmd;
+static float g_remote_prev_steering_cmd;
 
 static float remote_absf(float value)
 {
@@ -51,6 +55,8 @@ void remote_comm_init(void)
 {
     memset(&g_remote_state, 0, sizeof(g_remote_state));
     memset(g_remote_filtered_joystick, 0, sizeof(g_remote_filtered_joystick));
+    g_remote_prev_velocity_cmd = 0.0f;
+    g_remote_prev_steering_cmd = 0.0f;
     g_remote_timeout_ms = REMOTE_LORA_TIMEOUT_MS;
     lora3a22_init();
 }
@@ -81,6 +87,8 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
             g_remote_state.joystick[i] = 0.0f;
             g_remote_filtered_joystick[i] = 0.0f;
         }
+        g_remote_prev_velocity_cmd = 0.0f;
+        g_remote_prev_steering_cmd = 0.0f;
     }
 
     if (ctrl == NULL) {
@@ -91,8 +99,24 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
      * joystick[0] = 左摇杆 X（左右）
      * joystick[1] = 左摇杆 Y（前后）
      * 这里把左摇杆前后控制速度，左右控制转向。 */
-    ctrl->velocity_cmd = -g_remote_state.joystick[1];
-    ctrl->steering_cmd = -g_remote_state.joystick[0];
+    float velocity_cmd = -g_remote_state.joystick[1];
+    float steering_cmd = -g_remote_state.joystick[0];
+
+    /* 加速度前馈：当前指令越大，增益越小，避免高速切换过猛。 */
+    float velocity_mag = remote_absf(velocity_cmd);
+    float steering_mag = remote_absf(steering_cmd);
+
+    float velocity_gain = REMOTE_FF_GAIN_BASE / (1.0f + REMOTE_FF_GAIN_SCALE * velocity_mag);
+    float steering_gain = REMOTE_FF_GAIN_BASE / (1.0f + REMOTE_FF_GAIN_SCALE * steering_mag);
+
+    float velocity_ff = (velocity_cmd - g_remote_prev_velocity_cmd) * velocity_gain;
+    float steering_ff = (steering_cmd - g_remote_prev_steering_cmd) * steering_gain;
+
+    ctrl->velocity_cmd = remote_clamp(velocity_cmd + velocity_ff, -1.0f, 1.0f);
+    ctrl->steering_cmd = remote_clamp(steering_cmd + steering_ff, -1.0f, 1.0f);
+
+    g_remote_prev_velocity_cmd = velocity_cmd;
+    g_remote_prev_steering_cmd = steering_cmd;
 }
 
 const Remote_State_t *remote_comm_get_state(void)
