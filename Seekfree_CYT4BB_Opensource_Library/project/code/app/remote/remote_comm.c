@@ -6,6 +6,7 @@
 #define REMOTE_LPF_ALPHA       0.25f
 #define REMOTE_FF_GAIN_BASE    0.25f
 #define REMOTE_FF_GAIN_SCALE   0.20f
+#define REMOTE_FF_CURVE_POWER  2.0f
 
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
@@ -102,12 +103,15 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     float velocity_cmd = -g_remote_state.joystick[1];
     float steering_cmd = -g_remote_state.joystick[0];
 
-    /* 加速度前馈：当前指令越大，增益越小，避免高速切换过猛。 */
+    /* 加速度前馈：让大幅度推杆时前馈更强，接近极限时更有冲劲。 */
     float velocity_mag = remote_absf(velocity_cmd);
     float steering_mag = remote_absf(steering_cmd);
 
-    float velocity_gain = REMOTE_FF_GAIN_BASE / (1.0f + REMOTE_FF_GAIN_SCALE * velocity_mag);
-    float steering_gain = REMOTE_FF_GAIN_BASE / (1.0f + REMOTE_FF_GAIN_SCALE * steering_mag);
+    float velocity_curve = powf(velocity_mag, REMOTE_FF_CURVE_POWER);
+    float steering_curve = powf(steering_mag, REMOTE_FF_CURVE_POWER);
+
+    float velocity_gain = REMOTE_FF_GAIN_BASE * (1.0f + REMOTE_FF_GAIN_SCALE * velocity_curve);
+    float steering_gain = REMOTE_FF_GAIN_BASE * (1.0f + REMOTE_FF_GAIN_SCALE * steering_curve);
 
     float velocity_ff = (velocity_cmd - g_remote_prev_velocity_cmd) * velocity_gain;
     float steering_ff = (steering_cmd - g_remote_prev_steering_cmd) * steering_gain;
