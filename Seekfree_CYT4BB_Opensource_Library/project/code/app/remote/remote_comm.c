@@ -87,6 +87,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         for (uint8 i = 0u; i < 4u; i++) {
             g_remote_state.joystick[i] = 0.0f;
             g_remote_filtered_joystick[i] = 0.0f;
+            g_remote_state.key[i] = 0u;
         }
         g_remote_prev_velocity_cmd = 0.0f;
         g_remote_prev_steering_cmd = 0.0f;
@@ -95,6 +96,13 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     if (ctrl == NULL) {
         return;
     }
+    if(g_remote_state.key[2] != 0u)
+    {
+        ctrl->on_bridge = 1;
+    }
+
+    /* 仅响应 PB8 对应的肩键 */
+    
 
     /* 依据遥控协议注释：
      * joystick[0] = 左摇杆 X（左右）
