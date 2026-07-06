@@ -311,8 +311,8 @@ void control_task(void){
 
 /*---------------------------------------------------------------------------*/
 /* 折返测试: 平衡 → 前进 → 180°掉头 → 循环, 纯距离控制 */
-#define ZF_FWD_DIST_M      1.5f    /* 单程前进距离 (m) */
-#define ZF_FWD_SPEED       0.2f    /* 巡航速度 */
+#define ZF_FWD_DIST_M      1.0f    /* 单程前进距离 (m) */
+#define ZF_FWD_SPEED       0.3f    /* 巡航速度 */
 #define ZF_START_DELAY     5.0f    /* 启动等待 (s) */
 #define ZF_SEG_COUNT       4       /* 总段数 (2个来回) */
 
@@ -377,7 +377,7 @@ static void backforth_test(Move_cmd_t *cmd, const Sensor_data_t *sensor, float e
 /*---------------------------------------------------------------------------*/
 /* 画方测试: 前进 → 右转90° → 循环, 纯距离控制 */
 #define SQ_FWD_DIST_M      1.0f    /* 单边前进距离 (m) */
-#define SQ_FWD_SPEED       0.2f    /* 巡航速度 */
+#define SQ_FWD_SPEED       0.5f    /* 巡航速度 */
 #define SQ_START_DELAY     5.0f    /* 启动等待 (s) */
 #define SQ_SEG_COUNT       8       /* 总段数 (2个正方形) */
 
@@ -538,10 +538,10 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     /* 关节角度低通滤波, 滤除编码器量化噪声, 避免差分速度放大噪声 */
     {
         static float lf_filt = 0.0f, lb_filt = 0.0f, rf_filt = 0.0f, rb_filt = 0.0f;
-        lf_filt += 0.1f * (sensor->joint_left_front_angle  - lf_filt);
-        lb_filt += 0.1f * (sensor->joint_left_back_angle   - lb_filt);
-        rf_filt += 0.1f * (sensor->joint_right_front_angle - rf_filt);
-        rb_filt += 0.1f * (sensor->joint_right_back_angle  - rb_filt);
+        lf_filt += 0.5f * (sensor->joint_left_front_angle  - lf_filt);
+        lb_filt += 0.5f * (sensor->joint_left_back_angle   - lb_filt);
+        rf_filt += 0.5f * (sensor->joint_right_front_angle - rf_filt);
+        rb_filt += 0.5f * (sensor->joint_right_back_angle  - rb_filt);
         sensor->joint_left_front_angle  = lf_filt;
         sensor->joint_left_back_angle   = lb_filt;
         sensor->joint_right_front_angle = rf_filt;
