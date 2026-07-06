@@ -116,6 +116,11 @@ void robot_control_reset_balance_pid(void){
     pitch_balance_reset_statics();
 }
 
+void robot_control_reset_leg_speed_pid(void){
+    pid_reset(&g_leg_speed_pid);
+    pid_reset(&g_leg_roll_pid);
+}
+
 /*---------------------------------------------------------------------------*/
 /** 腿位置速度环反馈: 根据轮速调整足端 X, 根据横滚调整足端 Y */
 void robot_control_leg_speed_feedback(const Sensor_data_t *sensor,
@@ -262,7 +267,7 @@ void control_task(void){
 
     // 自动压弯: 根据 yaw rate 计算 body roll, 转弯时内侧下沉
     {
-        float roll_from_turn = -0.5f * sensor_local.gyro_yaw / MAX_YAW_RATE;
+        float roll_from_turn = -0.2f * sensor_local.gyro_yaw / MAX_YAW_RATE;
         cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
     }
 
@@ -576,7 +581,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd;
+    cmd->target_speed     = ctrl->velocity_cmd * 2.3f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
