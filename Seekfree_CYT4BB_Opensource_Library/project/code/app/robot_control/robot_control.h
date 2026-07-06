@@ -37,6 +37,9 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
 
 void robot_control_reset_balance_pid(void);
 
+/* 复位腿速度环 PID 积分 (落地时清除空中积累的轮速误差) */
+void robot_control_reset_leg_speed_pid(void);
+
 /* 公共辅助: 标称位形 + 雅可比求解 → 关节目标 (供 jump.c 复用) */
 void leg_offset_to_joint_target(LegSide_t side,
     const Foot_position_t *foot_pos, Leg_Target_t *target);
