@@ -28,7 +28,7 @@
 #define RIGHT_ABS_BACK_SIGN     1.0f
 
 /* ─── 平衡控制关键参数 ──────────────────────────────────────────── */
-#define PITCH_ANGLE_OFFSET_DEG  5.0f    /* IMU 安装偏置 (°), 车体水平时 angle_roll 的读数 */
+#define PITCH_ANGLE_OFFSET_DEG  3.7f    /* IMU 安装偏置 (°), 车体水平时 angle_roll 的读数 */
 #define GRAVITY_COMP_GAIN       50.0f   /* 重力补偿前馈增益 */
 
 /* ─── 结构体定义 ────────────────────────────────────────────────── */

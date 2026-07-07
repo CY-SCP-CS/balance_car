@@ -12,8 +12,9 @@ void jump_init(void);
 
 /* ─── 启动跳跃序列(连续跳 3 下) ───
  *  仅在 JUMP_IDLE 时有效, 触发后状态机从 JUMP_PREPARE 开始运行。
+ *  target_speed - 预留前进速度 (mm/s), 暂不生效
  */
-void jump_start(void);
+void jump_start(float target_speed);
 
 /* ─── 紧急中止 ───
  *  任何非空闲/结束状态下调⽤, 复位平衡 PID 后直接进⼊ JUMP_END。

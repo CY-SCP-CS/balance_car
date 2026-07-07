@@ -51,7 +51,9 @@ typedef enum {
 #define OFF_REACH_Y     -70.0f       /* 伸腿找地 */
 
 #define OFF_IMPACT_X    0.0f
-#define OFF_IMPACT_Y    30.0f        /* 收腿缓冲 */
+#define OFF_IMPACT_BASE 20.0f       /* 基础收腿深度 (mm) */
+#define OFF_IMPACT_MAX  80.0f       /* 最大收腿深度 (mm) */
+#define IMPACT_K_GYRO   15.0f       /* gyro 峰值 → 深度的增益 */
 
 #define OFF_ABSORB_X    0.0f
 #define OFF_ABSORB_Y    50.0f        /* 着陆缓冲 */
@@ -65,6 +67,9 @@ typedef enum {
 static JumpState_t  g_state         = JUMP_IDLE;    /* 当前状态 */
 static uint16_t     g_cycle         = 0;            /* 在当前状态的周期计数 */
 static uint8_t      g_jump_num      = 0;            /* 已完成跳跃次数 */
+static float        g_jump_target_speed = 0.0f;     /* 预留前进速度 (mm/s) */
+static float        g_impact_retract_y = 0.0f;      /* IMPACT 阶段计算出的收腿深度 */
+static float        g_gyro_peak_carry  = 0.0f;      /* DESCEND→IMPACT 传递 gyro 峰值 */
 
 /* 腿部关节 PID (与 robot_control.c 独立) */
 static Leg_PID_t    g_leg_left_pid;
@@ -164,13 +169,12 @@ static void run_balance(const Sensor_data_t *sensor,
 static void run_prepare(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 下蹲收腿, 保持平衡 + 速度环 */
+    /* 下蹲收腿, 保持平衡, 双腿对称 */
     Foot_position_t left  = { OFF_SQUAT_X, OFF_SQUAT_Y };
     Foot_position_t right = { OFF_SQUAT_X, OFF_SQUAT_Y };
 
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
-    robot_control_leg_speed_feedback(sensor, &left, &right);
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
@@ -183,15 +187,19 @@ static void run_prepare(const Sensor_data_t *sensor,
 static void run_takeoff(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 快速伸腿蹬地, 保持平衡 + 速度环 (轮子着地) */
+    /* 快速伸腿蹬地, 双腿对称推地, 保持平衡 (轮子着地) */
     Foot_position_t left  = { OFF_PUSH_X, OFF_PUSH_Y };
     Foot_position_t right = { OFF_PUSH_X, OFF_PUSH_Y };
 
     if (g_cycle == 1) {
         g_leg_left_pid.front.kp  = 10000.0f;
+        g_leg_left_pid.front.ki  = 50.0f;
         g_leg_left_pid.back.kp   = 10000.0f;
+        g_leg_left_pid.back.ki   = 50.0f;
         g_leg_right_pid.front.kp = 10000.0f;
+        g_leg_right_pid.front.ki = 50.0f;
         g_leg_right_pid.back.kp  = 10000.0f;
+        g_leg_right_pid.back.ki  = 50.0f;
         pid_reset(&g_leg_left_pid.front);
         pid_reset(&g_leg_left_pid.back);
         pid_reset(&g_leg_right_pid.front);
@@ -200,17 +208,20 @@ static void run_takeoff(const Sensor_data_t *sensor,
 
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
-    robot_control_leg_speed_feedback(sensor, &left, &right);
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
     if (g_cycle >= TAKEOFF_CYCLES) {
-        /* 恢复正常 kp, 进入空中前复位平衡 PID */
+        /* 恢复正常 kp/ki, 进入空中前复位平衡 PID */
         g_leg_left_pid.front.kp  = 1200.0f;
+        g_leg_left_pid.front.ki  = 0.0f;
         g_leg_left_pid.back.kp   = 1200.0f;
+        g_leg_left_pid.back.ki   = 0.0f;
         g_leg_right_pid.front.kp = 1200.0f;
+        g_leg_right_pid.front.ki = 0.0f;
         g_leg_right_pid.back.kp  = 1200.0f;
+        g_leg_right_pid.back.ki  = 0.0f;
         reset_balance();
         enter_state(JUMP_ASCEND);
     }
@@ -243,11 +254,12 @@ static void run_descend(const Sensor_data_t *sensor,
     Foot_position_t off = { OFF_REACH_X, OFF_REACH_Y };
 
     if (g_cycle == 1) {
-        pid_reset(&g_leg_left_pid.front);
-        pid_reset(&g_leg_left_pid.back);
-        pid_reset(&g_leg_right_pid.front);
-        pid_reset(&g_leg_right_pid.back);
+        g_gyro_peak_carry = 0.0f;
     }
+
+    /* 持续追踪 gyro 峰值, 传递给 IMPACT 阶段 */
+    float abs_gyro = fabsf(sensor->gyro_pitch);
+    if (abs_gyro > g_gyro_peak_carry) g_gyro_peak_carry = abs_gyro;
 
     balance_with_yaw_scaled(sensor, motor_cmd, 0.0f);
 
@@ -264,11 +276,15 @@ static void run_descend(const Sensor_data_t *sensor,
 static void run_impact(const Sensor_data_t *sensor,
                        Motor_cmd_duty_t *motor_cmd)
 {
-    /* 深收腿吸收冲击: 足端 +30mm, 平衡全开 */
-    Foot_position_t left  = { OFF_IMPACT_X, OFF_IMPACT_Y };
-    Foot_position_t right = { OFF_IMPACT_X, OFF_IMPACT_Y };
+    static float gyro_peak  = 0.0f;
+    static bool  triggered  = false;
+    static float retract_y  = 0.0f;
 
     if (g_cycle == 1) {
+        gyro_peak  = g_gyro_peak_carry;
+        g_gyro_peak_carry = 0.0f;
+        triggered  = false;
+        retract_y  = 0.0f;
         g_leg_left_pid.front.kp  = 10000.0f;
         g_leg_left_pid.back.kp   = 10000.0f;
         g_leg_right_pid.front.kp = 10000.0f;
@@ -283,13 +299,34 @@ static void run_impact(const Sensor_data_t *sensor,
         pid_reset(&g_leg_right_pid.back);
     }
 
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
+    /* 持续追踪 gyro 峰值 */
+    float abs_gyro = fabsf(sensor->gyro_pitch);
+    if (abs_gyro > gyro_peak) gyro_peak = abs_gyro;
+
+    /* 检测触地, 用 gyro 峰值决定收腿深度 */
+    if (!triggered && detect_impact(sensor)) {
+        triggered = true;
+        retract_y = OFF_IMPACT_BASE + IMPACT_K_GYRO * gyro_peak;
+        if (retract_y > OFF_IMPACT_MAX) retract_y = OFF_IMPACT_MAX;
+        g_impact_retract_y = retract_y;
+    }
+
+    Foot_position_t left, right;
+    if (triggered) {
+        left  = (Foot_position_t){ 0.0f, retract_y };
+        right = (Foot_position_t){ 0.0f, retract_y };
+        balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
+    } else {
+        left  = (Foot_position_t){ OFF_REACH_X, OFF_REACH_Y };
+        right = (Foot_position_t){ OFF_REACH_X, OFF_REACH_Y };
+        balance_with_yaw_scaled(sensor, motor_cmd, 0.0f);
+    }
 
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
-    if (g_cycle >= IMPACT_CYCLES) {
+    if ((triggered && g_cycle >= IMPACT_CYCLES) || g_cycle >= (IMPACT_CYCLES + 100)) {
         /* 恢复正常 kp */
         g_leg_left_pid.front.kp  = 1200.0f;
         g_leg_left_pid.back.kp   = 1200.0f;
@@ -303,23 +340,16 @@ static void run_land(const Sensor_data_t *sensor,
                      Motor_cmd_duty_t *motor_cmd)
 {
     /*
-     * 着陆恢复: 足端从收腿位(+30mm) 线性过渡到标称位(0,0)
+     * 着陆恢复: 足端从收腿位线性过渡到标称位(0,0)
      * 平衡全开
      */
     const float ratio = (float)g_cycle / (float)LAND_CYCLES;
     const float t = (ratio > 1.0f) ? 1.0f : ratio;
     float x = OFF_IMPACT_X * (1.0f - t);
-    float y = OFF_IMPACT_Y * (1.0f - t);
+    float y = g_impact_retract_y * (1.0f - t);
 
     Foot_position_t left  = { x, y };
     Foot_position_t right = { x, y };
-
-    if (g_cycle == 1) {
-        pid_reset(&g_leg_left_pid.front);
-        pid_reset(&g_leg_left_pid.back);
-        pid_reset(&g_leg_right_pid.front);
-        pid_reset(&g_leg_right_pid.back);
-    }
 
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
@@ -394,9 +424,10 @@ void jump_init(void) {
     g_target_right.back  = LEG_NOM_BACK_R;
 }
 
-void jump_start(void) {
+void jump_start(float target_speed) {
     if (g_state == JUMP_IDLE) {
         g_jump_num = 0;
+        g_jump_target_speed = target_speed;
         /* 复位腿 PID, 从零开始跟踪 */
         pid_reset(&g_leg_left_pid.front);
         pid_reset(&g_leg_left_pid.back);
