@@ -26,22 +26,17 @@ typedef enum {
 /* 各阶段持续时间 (控制周期数, 1 cycle = 1 ms) */
 #define BALANCE_CYCLES       500     /* 500 ms 预平衡 */
 #define PREPARE_CYCLES       500     /* 500 ms 准备下蹲 */
-#define TAKEOFF_CYCLES       130     /* 130 ms 蹬地伸展 (前100ms全推 + 后30ms过渡收腿) */
-#define ASCEND_CYCLES        30      /* 30 ms 空中收腿 (极短, 到顶点即进入下落) */
-#define DESCEND_CYCLES       70      /* 70 ms 下落: 伸腿→预收→等触地 */
+#define TAKEOFF_CYCLES       150     /* 150 ms: 前100ms全推 + 后50ms过渡+离地检测 */
+#define ASCEND_CYCLES        30      /* 30 ms 空中收腿 */
+#define DESCEND_CYCLES       30      /* 30 ms: 预收→保持→IMPACT */
 #define IMPACT_CYCLES        200     /* 200 ms 触地缓冲 */
 #define INTERVAL_CYCLES      10000   /* 10 s 跳跃间隔 */
 #define LAND_CYCLES          400     /* 400 ms 缓冲恢复 */
 
-/* DESCEND 子阶段 (ms, 相对 DESCEND 开始)
- *   [0~GRACE]      宽限期, 不检测触地, 腿快速伸出
- *   [0~EXTEND]     伸腿到底
- *   [EXTEND~RETRACT] 线性预收, 着陆前腿已在缓冲姿态
- *   [RETRACT~CYCLES] 保持预收位, 等触地
- */
-#define DESCEND_GRACE_MS      15     /* 触地检测宽限期: 先让腿伸出去 */
-#define DESCEND_EXTEND_MS     20     /* 伸腿阶段结束时间 */
-#define DESCEND_RETRACT_END   55     /* 预收腿结束时间 */
+/* DESCEND: 纯时序, 伸腿已在 ASCEND 末尾完成, 这里只管预收 */
+#define DESCEND_EXTEND_MS     5      /* 最后一点伸腿 */
+#define DESCEND_RETRACT_END   15     /* 预收完成 */
+#define ACCEL_FREEFALL_THRESHOLD  0.3f  /* accel_z 自由落体阈值, <此值判为离地 */
 
 /* 足端位置偏移量 (mm, 相对标称位形)
  *   实际坐标: Y<0 → 伸腿(重心升), Y>0 → 收腿(重心降)
@@ -61,9 +56,9 @@ typedef enum {
 #define OFF_PRE_X       0.0f
 #define OFF_PRE_Y       30.0f        /* 预收腿位 (着陆前提前收, 准备缓冲) */
 
-#define OFF_IMPACT_BASE 20.0f       /* 基础收腿深度 (mm) */
-#define OFF_IMPACT_MAX  80.0f       /* 最大收腿深度 (mm) */
-#define IMPACT_K_GYRO   15.0f       /* gyro 峰值 → 收腿深度的增益 */
+#define OFF_IMPACT_BASE 30.0f       /* 基础收腿深度 (mm) */
+#define OFF_IMPACT_MAX  100.0f      /* 最大收腿深度 (mm) */
+#define IMPACT_K_GYRO   25.0f       /* gyro 峰值 → 收腿深度的增益 */
 
 #define LAND_FORWARD_PWM 300        /* 落地前倾补偿 (PWM), 抵消重心偏后 */
 
@@ -242,7 +237,13 @@ static void run_takeoff(const Sensor_data_t *sensor,
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
-    if (g_cycle >= TAKEOFF_CYCLES) {
+    /* 离地检测: 100ms 后用 accel_z 判自由落体 */
+    bool airborne = false;
+    if (g_cycle > 100) {
+        airborne = (fabsf(sensor->accel_z) < ACCEL_FREEFALL_THRESHOLD);
+    }
+
+    if (airborne || g_cycle >= TAKEOFF_CYCLES) {
         /* 恢复正常 kp/ki, 进入空中前复位平衡 PID */
         g_leg_left_pid.front.kp  = 1200.0f;
         g_leg_left_pid.front.ki  = 0.0f;
@@ -260,24 +261,32 @@ static void run_takeoff(const Sensor_data_t *sensor,
 static void run_ascend(const Sensor_data_t *sensor,
                        Motor_cmd_duty_t *motor_cmd)
 {
-    /* 空中收腿: 平衡线性衰减到零, 缩短到 60ms 给伸腿留时间 */
-    Foot_position_t off = { OFF_TUCK_X, OFF_TUCK_Y };
+    /* 离地后: 先收腿减少惯量, 再开始伸腿够地
+     *   [0~15ms]: 收腿 tuck, 平衡衰减 1.0→0.0
+     *   [15~30ms]: 伸腿 (tuck → reach), 平衡=0, DESCEND 前腿已伸出
+     */
+    Foot_position_t off;
+    off.x = OFF_TUCK_X;
 
-    float weight = 1.0f - (float)g_cycle / (float)ASCEND_CYCLES;
-    if (weight < 0.0f) weight = 0.0f;
+    if (g_cycle <= 15) {
+        off.y = OFF_TUCK_Y;
+    } else {
+        float t = (float)(g_cycle - 15) / 15.0f;
+        if (t > 1.0f) t = 1.0f;
+        off.y = OFF_TUCK_Y + (OFF_REACH_Y - OFF_TUCK_Y) * t;
+    }
+
+    float weight;
+    if (g_cycle <= 15) {
+        weight = 1.0f - (float)g_cycle / 15.0f;
+    } else {
+        weight = 0.0f;
+    }
     balance_with_yaw_scaled(sensor, motor_cmd, weight);
 
     leg_offset_to_joint_target(LEG_LEFT,  &off, &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
-
-    /* 提前着地: 不直接收腿, 转到 DESCEND 伸腿找地 */
-    if (detect_impact(sensor)) {
-        reset_balance();
-        detect_impact_reset();
-        enter_state(JUMP_DESCEND);
-        return;
-    }
 
     if (g_cycle >= ASCEND_CYCLES) {
         reset_balance();
@@ -315,17 +324,15 @@ static void run_descend(const Sensor_data_t *sensor,
     float abs_gyro = fabsf(sensor->gyro_pitch);
     if (abs_gyro > g_gyro_peak_carry) g_gyro_peak_carry = abs_gyro;
 
-    /* 伸腿阶段: 0~20ms, 从收腿位快速伸出 */
+    /* 纯时序: 伸腿→预收→保持 → IMPACT */
     if (g_cycle <= DESCEND_EXTEND_MS) {
         off.y = OFF_REACH_Y;
     }
-    /* 预收阶段: 20~55ms, 线性从伸腿过渡到预收位 */
     else if (g_cycle <= DESCEND_RETRACT_END) {
         float t = (float)(g_cycle - DESCEND_EXTEND_MS)
                 / (float)(DESCEND_RETRACT_END - DESCEND_EXTEND_MS);
         off.y = OFF_REACH_Y + (OFF_PRE_Y - OFF_REACH_Y) * t;
     }
-    /* 保持预收: 55~70ms */
     else {
         off.y = OFF_PRE_Y;
     }
@@ -336,17 +343,7 @@ static void run_descend(const Sensor_data_t *sensor,
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
-    /* 宽限期内不检测触地, 确保腿有时间伸出 */
-    if (g_cycle <= DESCEND_GRACE_MS) {
-        if (g_cycle >= DESCEND_CYCLES) {
-            enter_state(JUMP_IMPACT);
-        }
-        return;
-    }
-
-    /* 陀螺仪触地检测 或 超时 → IMPACT 缓冲 */
-    if (detect_impact(sensor) || g_cycle >= DESCEND_CYCLES) {
-        /* 退出前恢复 kp (IMPACT 会重新设) */
+    if (g_cycle >= DESCEND_CYCLES) {
         enter_state(JUMP_IMPACT);
     }
 }
@@ -394,7 +391,7 @@ static void run_impact(const Sensor_data_t *sensor,
     if (live_retract < OFF_IMPACT_BASE) live_retract = OFF_IMPACT_BASE;
 
     /* 低通滤波平滑, 避免收腿深度突变 */
-    g_impact_retract_y += 0.3f * (live_retract - g_impact_retract_y);
+    g_impact_retract_y += 0.5f * (live_retract - g_impact_retract_y);
 
     Foot_position_t left  = { 0.0f, g_impact_retract_y };
     Foot_position_t right = { 0.0f, g_impact_retract_y };

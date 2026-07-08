@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 /* ─── 足端最大偏移量 ─── */
-#define FOOT_X_OFFSET_MAX      90.0f   /* 速度闭环最大 x 偏移 (mm) */
+#define FOOT_X_OFFSET_MAX      80.0f   /* 速度闭环最大 x 偏移 (mm) */
 #define FOOT_ROLL_OFFSET_MAX   180.0f   /* 横滚闭环最大差动 y 偏移 (mm) */
 #define HEIGHT_OFFSET_MAX      30.0f   /* 高度指令最大 y 偏移 (mm) */
 
