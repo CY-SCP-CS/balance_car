@@ -26,17 +26,25 @@ typedef enum {
 /* 各阶段持续时间 (控制周期数, 1 cycle = 1 ms) */
 #define BALANCE_CYCLES       500     /* 500 ms 预平衡 */
 #define PREPARE_CYCLES       500     /* 500 ms 准备下蹲 */
-#define TAKEOFF_CYCLES       100     /* 100 ms 蹬地伸展 */
-#define ASCEND_CYCLES        120     /* 120 ms 空中收腿 */
-#define DESCEND_CYCLES       300     /* 300 ms 伸腿准备接地 */
+#define TAKEOFF_CYCLES       130     /* 130 ms 蹬地伸展 (前100ms全推 + 后30ms过渡收腿) */
+#define ASCEND_CYCLES        30      /* 30 ms 空中收腿 (极短, 到顶点即进入下落) */
+#define DESCEND_CYCLES       70      /* 70 ms 下落: 伸腿→预收→等触地 */
 #define IMPACT_CYCLES        200     /* 200 ms 触地缓冲 */
 #define INTERVAL_CYCLES      10000   /* 10 s 跳跃间隔 */
 #define LAND_CYCLES          400     /* 400 ms 缓冲恢复 */
 
+/* DESCEND 子阶段 (ms, 相对 DESCEND 开始)
+ *   [0~GRACE]      宽限期, 不检测触地, 腿快速伸出
+ *   [0~EXTEND]     伸腿到底
+ *   [EXTEND~RETRACT] 线性预收, 着陆前腿已在缓冲姿态
+ *   [RETRACT~CYCLES] 保持预收位, 等触地
+ */
+#define DESCEND_GRACE_MS      15     /* 触地检测宽限期: 先让腿伸出去 */
+#define DESCEND_EXTEND_MS     20     /* 伸腿阶段结束时间 */
+#define DESCEND_RETRACT_END   55     /* 预收腿结束时间 */
+
 /* 足端位置偏移量 (mm, 相对标称位形)
- *   坐标系: +X 向前, +Y 向下
- *   Y < 0 : 足端上抬 ⇔ 收腿 ⇔ 重心降低 (下蹲 / 空中收腿)
- *   Y > 0 : 足端下压 ⇔ 伸腿 ⇔ 重心升高 (蹬地)
+ *   实际坐标: Y<0 → 伸腿(重心升), Y>0 → 收腿(重心降)
  */
 #define OFF_PUSH_X      0.0f
 #define OFF_PUSH_Y      -400.0f      /* 蹬地伸展 (故意超出关节极限, 保持 PID 饱和输出) */
@@ -48,15 +56,16 @@ typedef enum {
 #define OFF_TUCK_Y      85.0f        /* 空中紧收 */
 
 #define OFF_REACH_X     0.0f
-#define OFF_REACH_Y     -70.0f       /* 伸腿找地 */
+#define OFF_REACH_Y     -90.0f       /* 伸腿找地 */
 
-#define OFF_IMPACT_X    0.0f
+#define OFF_PRE_X       0.0f
+#define OFF_PRE_Y       30.0f        /* 预收腿位 (着陆前提前收, 准备缓冲) */
+
 #define OFF_IMPACT_BASE 20.0f       /* 基础收腿深度 (mm) */
 #define OFF_IMPACT_MAX  80.0f       /* 最大收腿深度 (mm) */
-#define IMPACT_K_GYRO   15.0f       /* gyro 峰值 → 深度的增益 */
+#define IMPACT_K_GYRO   15.0f       /* gyro 峰值 → 收腿深度的增益 */
 
-#define OFF_ABSORB_X    0.0f
-#define OFF_ABSORB_Y    50.0f        /* 着陆缓冲 */
+#define LAND_FORWARD_PWM 300        /* 落地前倾补偿 (PWM), 抵消重心偏后 */
 
 #define IMPACT_GYRO_DELTA_THRESHOLD  2.0f  /* 陀螺仪触地检测阈值 (rad/s) */
 
@@ -125,17 +134,23 @@ static void balance_with_yaw_scaled(const Sensor_data_t *sensor,
     }
 }
 
+/* detect_impact 状态 (模块级, 支持跨状态复位) */
+static float g_impact_prev_gyro = 0.0f;
+static bool  g_impact_first_call = true;
+
+static void detect_impact_reset(void) {
+    g_impact_first_call = true;
+}
+
 /** 陀螺仪触地检测: 检测俯仰角速度突变 */
 static bool detect_impact(const Sensor_data_t *sensor) {
-    static float prev_gyro = 0.0f;
-    static bool  first_call = true;
-    if (first_call) {
-        prev_gyro = sensor->gyro_pitch;
-        first_call = false;
+    if (g_impact_first_call) {
+        g_impact_prev_gyro = sensor->gyro_pitch;
+        g_impact_first_call = false;
         return false;
     }
-    float delta = sensor->gyro_pitch - prev_gyro;
-    prev_gyro = sensor->gyro_pitch;
+    float delta = sensor->gyro_pitch - g_impact_prev_gyro;
+    g_impact_prev_gyro = sensor->gyro_pitch;
     return (fabsf(delta) > IMPACT_GYRO_DELTA_THRESHOLD);
 }
 
@@ -187,9 +202,24 @@ static void run_prepare(const Sensor_data_t *sensor,
 static void run_takeoff(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 快速伸腿蹬地, 双腿对称推地, 保持平衡 (轮子着地) */
-    Foot_position_t left  = { OFF_PUSH_X, OFF_PUSH_Y };
-    Foot_position_t right = { OFF_PUSH_X, OFF_PUSH_Y };
+    /* 快速伸腿蹬地, 双腿对称推地, 保持平衡 (轮子着地)
+     *   前 100ms: 全力推地 (OFF_PUSH_Y = -400)
+     *   后  30ms: 线性过渡到收腿 (OFF_TUCK_Y = 85), 避免切 ASCEND 时目标跳变
+     */
+    Foot_position_t left, right;
+    left.x  = OFF_PUSH_X;
+    right.x = OFF_PUSH_X;
+
+    if (g_cycle <= 100) {
+        left.y  = OFF_PUSH_Y;
+        right.y = OFF_PUSH_Y;
+    } else {
+        float blend_t = (float)(g_cycle - 100) / 30.0f;
+        if (blend_t > 1.0f) blend_t = 1.0f;
+        float blended_y = OFF_PUSH_Y + (OFF_TUCK_Y - OFF_PUSH_Y) * blend_t;
+        left.y  = blended_y;
+        right.y = blended_y;
+    }
 
     if (g_cycle == 1) {
         g_leg_left_pid.front.kp  = 10000.0f;
@@ -230,7 +260,7 @@ static void run_takeoff(const Sensor_data_t *sensor,
 static void run_ascend(const Sensor_data_t *sensor,
                        Motor_cmd_duty_t *motor_cmd)
 {
-    /* 空中收腿: 平衡线性衰减到零 */
+    /* 空中收腿: 平衡线性衰减到零, 缩短到 60ms 给伸腿留时间 */
     Foot_position_t off = { OFF_TUCK_X, OFF_TUCK_Y };
 
     float weight = 1.0f - (float)g_cycle / (float)ASCEND_CYCLES;
@@ -241,8 +271,17 @@ static void run_ascend(const Sensor_data_t *sensor,
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
+    /* 提前着地: 不直接收腿, 转到 DESCEND 伸腿找地 */
+    if (detect_impact(sensor)) {
+        reset_balance();
+        detect_impact_reset();
+        enter_state(JUMP_DESCEND);
+        return;
+    }
+
     if (g_cycle >= ASCEND_CYCLES) {
         reset_balance();
+        detect_impact_reset();
         enter_state(JUMP_DESCEND);
     }
 }
@@ -250,16 +289,46 @@ static void run_ascend(const Sensor_data_t *sensor,
 static void run_descend(const Sensor_data_t *sensor,
                         Motor_cmd_duty_t *motor_cmd)
 {
-    /* 伸腿准备接地, 平衡关闭 (空中不需要平衡) */
-    Foot_position_t off = { OFF_REACH_X, OFF_REACH_Y };
+    /* 下落三阶段 (从最高点到落地约 60ms):
+     *   [0~15ms]   宽限期: 快速伸腿, 不检测触地
+     *   [0~20ms]   伸腿到底 (OFF_REACH_Y = -90)
+     *   [20~55ms]  逐步预收 (-90 → +30), 着陆前腿已在缓冲姿态
+     *   [55~70ms]  保持预收位, 等触地
+     */
+    Foot_position_t off;
+    off.x = OFF_REACH_X;
 
     if (g_cycle == 1) {
         g_gyro_peak_carry = 0.0f;
+        /* 快速伸腿: 提高 kp 确保在 20ms 内完成 */
+        g_leg_left_pid.front.kp  = 10000.0f;
+        g_leg_left_pid.back.kp   = 10000.0f;
+        g_leg_right_pid.front.kp = 10000.0f;
+        g_leg_right_pid.back.kp  = 10000.0f;
+        pid_reset(&g_leg_left_pid.front);
+        pid_reset(&g_leg_left_pid.back);
+        pid_reset(&g_leg_right_pid.front);
+        pid_reset(&g_leg_right_pid.back);
     }
 
     /* 持续追踪 gyro 峰值, 传递给 IMPACT 阶段 */
     float abs_gyro = fabsf(sensor->gyro_pitch);
     if (abs_gyro > g_gyro_peak_carry) g_gyro_peak_carry = abs_gyro;
+
+    /* 伸腿阶段: 0~20ms, 从收腿位快速伸出 */
+    if (g_cycle <= DESCEND_EXTEND_MS) {
+        off.y = OFF_REACH_Y;
+    }
+    /* 预收阶段: 20~55ms, 线性从伸腿过渡到预收位 */
+    else if (g_cycle <= DESCEND_RETRACT_END) {
+        float t = (float)(g_cycle - DESCEND_EXTEND_MS)
+                / (float)(DESCEND_RETRACT_END - DESCEND_EXTEND_MS);
+        off.y = OFF_REACH_Y + (OFF_PRE_Y - OFF_REACH_Y) * t;
+    }
+    /* 保持预收: 55~70ms */
+    else {
+        off.y = OFF_PRE_Y;
+    }
 
     balance_with_yaw_scaled(sensor, motor_cmd, 0.0f);
 
@@ -267,8 +336,17 @@ static void run_descend(const Sensor_data_t *sensor,
     leg_offset_to_joint_target(LEG_RIGHT, &off, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
-    /* 陀螺仪触地检测 或 超时 */
+    /* 宽限期内不检测触地, 确保腿有时间伸出 */
+    if (g_cycle <= DESCEND_GRACE_MS) {
+        if (g_cycle >= DESCEND_CYCLES) {
+            enter_state(JUMP_IMPACT);
+        }
+        return;
+    }
+
+    /* 陀螺仪触地检测 或 超时 → IMPACT 缓冲 */
     if (detect_impact(sensor) || g_cycle >= DESCEND_CYCLES) {
+        /* 退出前恢复 kp (IMPACT 会重新设) */
         enter_state(JUMP_IMPACT);
     }
 }
@@ -276,15 +354,20 @@ static void run_descend(const Sensor_data_t *sensor,
 static void run_impact(const Sensor_data_t *sensor,
                        Motor_cmd_duty_t *motor_cmd)
 {
-    static float gyro_peak  = 0.0f;
-    static bool  triggered  = false;
-    static float retract_y  = 0.0f;
+    /* 触地缓冲: 立即收腿, 根据实时 gyro 连续调节深度 (主动阻尼) */
+    static float gyro_peak = 0.0f;
 
     if (g_cycle == 1) {
-        gyro_peak  = g_gyro_peak_carry;
+        gyro_peak = g_gyro_peak_carry;
         g_gyro_peak_carry = 0.0f;
-        triggered  = false;
-        retract_y  = 0.0f;
+
+        /* 用 gyro 峰值计算初始收腿深度 */
+        float retract_y = OFF_IMPACT_BASE + IMPACT_K_GYRO * gyro_peak;
+        if (retract_y > OFF_IMPACT_MAX) retract_y = OFF_IMPACT_MAX;
+        if (retract_y < OFF_IMPACT_BASE) retract_y = OFF_IMPACT_BASE;
+        g_impact_retract_y = retract_y;
+
+        /* 提高腿 PID 刚度, 快速响应冲击 */
         g_leg_left_pid.front.kp  = 10000.0f;
         g_leg_left_pid.back.kp   = 10000.0f;
         g_leg_right_pid.front.kp = 10000.0f;
@@ -303,30 +386,29 @@ static void run_impact(const Sensor_data_t *sensor,
     float abs_gyro = fabsf(sensor->gyro_pitch);
     if (abs_gyro > gyro_peak) gyro_peak = abs_gyro;
 
-    /* 检测触地, 用 gyro 峰值决定收腿深度 */
-    if (!triggered && detect_impact(sensor)) {
-        triggered = true;
-        retract_y = OFF_IMPACT_BASE + IMPACT_K_GYRO * gyro_peak;
-        if (retract_y > OFF_IMPACT_MAX) retract_y = OFF_IMPACT_MAX;
-        g_impact_retract_y = retract_y;
-    }
+    /* 每周期根据实时 gyro 调整收腿深度 (主动阻尼)
+     * 冲击大 → gyro 大 → 收腿深 → 吸收能量
+     * 冲击消退 → gyro 小 → 收腿浅 → 恢复站立 */
+    float live_retract = OFF_IMPACT_BASE + IMPACT_K_GYRO * abs_gyro;
+    if (live_retract > OFF_IMPACT_MAX) live_retract = OFF_IMPACT_MAX;
+    if (live_retract < OFF_IMPACT_BASE) live_retract = OFF_IMPACT_BASE;
 
-    Foot_position_t left, right;
-    if (triggered) {
-        left  = (Foot_position_t){ 0.0f, retract_y };
-        right = (Foot_position_t){ 0.0f, retract_y };
-        balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-    } else {
-        left  = (Foot_position_t){ OFF_REACH_X, OFF_REACH_Y };
-        right = (Foot_position_t){ OFF_REACH_X, OFF_REACH_Y };
-        balance_with_yaw_scaled(sensor, motor_cmd, 0.0f);
-    }
+    /* 低通滤波平滑, 避免收腿深度突变 */
+    g_impact_retract_y += 0.3f * (live_retract - g_impact_retract_y);
+
+    Foot_position_t left  = { 0.0f, g_impact_retract_y };
+    Foot_position_t right = { 0.0f, g_impact_retract_y };
+
+    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
+    /* 落地瞬间前倾补偿: 平衡积分已被复位, PWM 偏置抵消重心偏后 */
+    motor_cmd->left_motor_pwm  += LAND_FORWARD_PWM;
+    motor_cmd->right_motor_pwm += LAND_FORWARD_PWM;
 
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
 
-    if ((triggered && g_cycle >= IMPACT_CYCLES) || g_cycle >= (IMPACT_CYCLES + 100)) {
+    if (g_cycle >= IMPACT_CYCLES) {
         /* 恢复正常 kp */
         g_leg_left_pid.front.kp  = 1200.0f;
         g_leg_left_pid.back.kp   = 1200.0f;
@@ -345,13 +427,18 @@ static void run_land(const Sensor_data_t *sensor,
      */
     const float ratio = (float)g_cycle / (float)LAND_CYCLES;
     const float t = (ratio > 1.0f) ? 1.0f : ratio;
-    float x = OFF_IMPACT_X * (1.0f - t);
+    float x = 0.0f;
     float y = g_impact_retract_y * (1.0f - t);
 
     Foot_position_t left  = { x, y };
     Foot_position_t right = { x, y };
 
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
+
+    /* 前倾补偿随 LAND 进度线性衰减: 平衡 PID 积分逐渐积累, 偏置逐步退出 */
+    int forward = (int)(LAND_FORWARD_PWM * (1.0f - t));
+    motor_cmd->left_motor_pwm  += forward;
+    motor_cmd->right_motor_pwm += forward;
 
     robot_control_leg_speed_feedback(sensor, &left, &right);
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
