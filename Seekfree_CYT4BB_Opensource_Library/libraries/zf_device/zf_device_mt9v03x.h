@@ -131,6 +131,7 @@ typedef enum
 
 extern vuint8   mt9v03x_finish_flag;                                            // 一场图像采集完成标志位
 extern uint8    mt9v03x_image[MT9V03X_H][MT9V03X_W];
+extern uint8    mt9v03x_image_temp[MT9V03X_H][MT9V03X_W];
 
 uint8       mt9v03x_set_exposure_time   (uint16 light);
 uint8       mt9v03x_init                (void);

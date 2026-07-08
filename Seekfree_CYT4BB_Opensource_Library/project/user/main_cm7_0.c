@@ -3,10 +3,10 @@
 #include "../code/common/types.h"
 #include "../code/app/navigation/nav_engine.h"
 #include "../code/app/vision/vision_pipeline.h"
-#include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
 #include "../code/app/remote/remote_comm.h"
+#include "../code/app/remote/remote_debug.h"
 #include "../code/app/robot_control/jump.h"
 #include "../code/control/leg/angle_offset.h"
 
@@ -24,6 +24,7 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
+    remote_debug_init();
 
     if(!imu_init())
     {
@@ -34,8 +35,7 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-   // ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
-
+    // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。
     small_driver_uart_init();
     remote_comm_init();
     robot_control_init();
@@ -77,9 +77,6 @@ int main(void)
         small_driver_get_angle(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
-        //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
-        // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
-        //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 
     }
 }

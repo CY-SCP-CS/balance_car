@@ -1138,6 +1138,12 @@
                     <name>$PROJ_DIR$\..\..\code\app\remote\remote_comm.h</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\remote\remote_debug.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\remote\remote_debug.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\remote\remote_protocol.h</name>
                 </file>
             </group>
@@ -1281,45 +1287,6 @@
             </group>
         </group>
         <group>
-            <name>hmi</name>
-            <group>
-                <name>ui</name>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_dashboard.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_dashboard.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_imu_debug.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_imu_debug.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav_debug.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_nav_debug.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_remote.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\page_remote.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_common.h</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_manager.c</name>
-                </file>
-                <file>
-                    <name>$PROJ_DIR$\..\..\code\hmi\ui\ui_manager.h</name>
-                </file>
-            </group>
-        </group>
-        <group>
             <name>lib</name>
             <group>
                 <name>pid</name>
@@ -1343,9 +1310,6 @@
                 </file>
             </group>
         </group>
-        <file>
-            <name>$PROJ_DIR$\..\..\code\本文件夹作用.txt</name>
-        </file>
     </group>
     <group>
         <name>doc</name>

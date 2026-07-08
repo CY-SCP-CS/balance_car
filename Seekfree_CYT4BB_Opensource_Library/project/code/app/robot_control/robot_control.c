@@ -3,7 +3,7 @@
 #include "jump.h"
 #include "../../lib/pid/pid_calculate.h"
 #include "../../common/types.h"
-#include "../../hmi/ui/page_remote.h"
+#include "../remote/remote_debug.h"
 #include "../navigation/nav_engine.h"
 #include "../../control/leg/angle_offset.h"
 #include "../../control/leg/leg_pid_control.h"
@@ -79,19 +79,18 @@ void robot_control_init(void){
     g_leg_target_right.front = 0.4f;
     g_leg_target_right.back  = -0.4f;
 
-    remote_param_bind(0, &g_pitch_angle_pid.kp);
-    remote_param_bind(1, &g_pitch_gyro_pid.kp);
-    remote_param_bind(2, &g_pitch_gyro_pid.kd);
-    remote_param_bind(3, &g_speed_pid.kp);
-    remote_param_bind(4, &g_leg_left_pid.front.kp);
-    remote_param_bind(5, &g_leg_roll_pid.kp);
-    remote_param_bind(6, &g_yaw_pid.kp);
-    remote_param_bind(7, &g_yaw_pid.kd);
-    remote_param_bind(8, &g_odom_scale);
+    remote_debug_bind(0, &g_pitch_angle_pid.kp);
+    remote_debug_bind(1, &g_pitch_gyro_pid.kp);
+    remote_debug_bind(2, &g_pitch_gyro_pid.kd);
+    remote_debug_bind(3, &g_speed_pid.kp);
+    remote_debug_bind(4, &g_leg_left_pid.front.kp);
+    remote_debug_bind(5, &g_leg_roll_pid.kp);
+    remote_debug_bind(6, &g_yaw_pid.kp);
+    remote_debug_bind(7, &g_yaw_pid.kd);
 
 #if USE_VMC
-    remote_param_bind(6, &g_vmc_config.kp);
-    remote_param_bind(7, &g_vmc_config.kd);
+    remote_debug_bind(6, &g_vmc_config.kp);
+    remote_debug_bind(7, &g_vmc_config.kd);
 #endif
 
     jump_init();
