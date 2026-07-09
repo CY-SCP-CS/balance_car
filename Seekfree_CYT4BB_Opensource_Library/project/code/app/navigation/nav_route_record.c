@@ -187,6 +187,16 @@ void nav_route_record_reset(void)
     g_record_state.overflow = false;
 }
 
+static void set_loaded_route_ready(uint8 route_len)
+{
+    nav_stop();
+    g_record_state.mode = NAV_ROUTE_READY;
+    g_record_state.keypoint_count = 0u;
+    g_record_state.segment_count = route_len;
+    g_record_state.route_ready = true;
+    g_record_state.overflow = false;
+}
+
 bool nav_route_record_load_saved(void)
 {
     uint8 route_len = 0u;
@@ -197,12 +207,22 @@ bool nav_route_record_load_saved(void)
         return false;
     }
 
-    nav_stop();
-    g_record_state.mode = NAV_ROUTE_READY;
-    g_record_state.keypoint_count = 0u;
-    g_record_state.segment_count = route_len;
-    g_record_state.route_ready = true;
-    g_record_state.overflow = false;
+    set_loaded_route_ready(route_len);
+
+    return true;
+}
+
+bool nav_route_record_load_previous_saved(void)
+{
+    uint8 route_len = 0u;
+
+    if (!nav_route_storage_load_previous(g_record_route,
+                                         NAV_RECORD_MAX_SEGMENTS,
+                                         &route_len)) {
+        return false;
+    }
+
+    set_loaded_route_ready(route_len);
 
     return true;
 }

@@ -8,5 +8,8 @@ bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len);
 bool nav_route_storage_load(Nav_Segment_t *route,
                             uint8 max_route_len,
                             uint8 *route_len);
+bool nav_route_storage_load_previous(Nav_Segment_t *route,
+                                     uint8 max_route_len,
+                                     uint8 *route_len);
 
 #endif
