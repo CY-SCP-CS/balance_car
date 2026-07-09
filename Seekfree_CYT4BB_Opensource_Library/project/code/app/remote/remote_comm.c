@@ -70,9 +70,11 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         lora3a22_finsh_flag = 0;
 
         for (uint8 i = 0u; i < 4u; i++) {
-            float raw_value = remote_normalize_joystick(remote_get_raw_joystick(i));
-            g_remote_filtered_joystick[i] += (raw_value - g_remote_filtered_joystick[i]) * REMOTE_LPF_ALPHA;
-            g_remote_state.joystick[i] = g_remote_filtered_joystick[i];
+            int16 raw_value = remote_get_raw_joystick(i);
+            float normalized_value = remote_normalize_joystick(raw_value);
+            g_remote_filtered_joystick[i] +=
+                (normalized_value - g_remote_filtered_joystick[i]) * REMOTE_LPF_ALPHA;
+            g_remote_state.joystick[i] = raw_value;
             g_remote_state.key[i] = lora3a22_uart_transfer.key[i];
             g_remote_state.switch_key[i] = lora3a22_uart_transfer.switch_key[i];
         }
@@ -85,7 +87,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     } else {
         g_remote_state.connected = false;
         for (uint8 i = 0u; i < 4u; i++) {
-            g_remote_state.joystick[i] = 0.0f;
+            g_remote_state.joystick[i] = 0;
             g_remote_filtered_joystick[i] = 0.0f;
             g_remote_state.key[i] = 0u;
         }
@@ -111,8 +113,8 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
      * joystick[0] = 左摇杆 X（左右）
      * joystick[1] = 左摇杆 Y（前后）
      * 这里把左摇杆前后控制速度，左右控制转向。 */
-    float velocity_cmd = g_remote_state.joystick[1];
-    float steering_cmd = g_remote_state.joystick[2];
+    float velocity_cmd = g_remote_filtered_joystick[1];
+    float steering_cmd = g_remote_filtered_joystick[2];
 
     ctrl->velocity_cmd = remote_clamp(velocity_cmd, -1.0f, 1.0f);
     ctrl->steering_cmd = remote_clamp(steering_cmd, -1.0f, 1.0f);
