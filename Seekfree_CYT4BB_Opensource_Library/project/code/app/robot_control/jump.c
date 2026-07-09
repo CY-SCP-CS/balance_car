@@ -37,6 +37,7 @@ typedef enum {
 #define DESCEND_EXTEND_MS     5      /* 最后一点伸腿 */
 #define DESCEND_RETRACT_END   15     /* 预收完成 */
 #define ACCEL_FREEFALL_THRESHOLD  0.3f  /* accel_z 自由落体阈值, <此值判为离地 */
+#define ROLL_LEVEL_GAIN           80.0f /* 额外 roll 修正增益 (mm/rad), 双腿不等高时加大 */
 
 /* 足端位置偏移量 (mm, 相对标称位形)
  *   实际坐标: Y<0 → 伸腿(重心升), Y>0 → 收腿(重心降)
@@ -166,6 +167,12 @@ static void run_balance(const Sensor_data_t *sensor,
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
     robot_control_leg_speed_feedback(sensor, &left, &right);
+    /* 额外 roll 修正: 身体往哪边歪, 那边的腿就多伸一点 */
+    {
+        float roll_corr = sensor->angle_roll * ROLL_LEVEL_GAIN;
+        left.y  += roll_corr;
+        right.y -= roll_corr;
+    }
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
@@ -438,6 +445,12 @@ static void run_land(const Sensor_data_t *sensor,
     motor_cmd->right_motor_pwm += forward;
 
     robot_control_leg_speed_feedback(sensor, &left, &right);
+    /* 额外 roll 修正 */
+    {
+        float roll_corr = sensor->angle_roll * ROLL_LEVEL_GAIN;
+        left.y  += roll_corr;
+        right.y -= roll_corr;
+    }
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);
@@ -462,6 +475,12 @@ static void run_interval(const Sensor_data_t *sensor,
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
     robot_control_leg_speed_feedback(sensor, &left, &right);
+    /* 额外 roll 修正 */
+    {
+        float roll_corr = sensor->angle_roll * ROLL_LEVEL_GAIN;
+        left.y  += roll_corr;
+        right.y -= roll_corr;
+    }
     leg_offset_to_joint_target(LEG_LEFT,  &left,  &g_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &right, &g_target_right);
     run_leg_pid(sensor, motor_cmd);

@@ -35,7 +35,7 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
  *  USE_VMC = 1 : 修复后的 VMC 方案 (需现场调参)
  */
 #define USE_VMC 0
-#define REMOTE_STEER_GAIN_RAD 0.50f
+#define REMOTE_STEER_GAIN_RAD 6.00f
 
 /* 腿部关节 PID 控制器 */
 static Leg_PID_t g_leg_left_pid, g_leg_right_pid;
@@ -61,7 +61,7 @@ void robot_control_init(void){
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
-    pid_init(&g_leg_speed_pid, 422.0f, 0.47f, 2.00f, ROBOT_CONTROL_DT, 90.0f, 50.0f);
+    pid_init(&g_leg_speed_pid, 422.0f, 0.47f, 2.00f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
     pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
@@ -247,13 +247,13 @@ void control_task(void){
         while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
         yaw_cur = cmd_local.target_direction - yaw_error;
 
-        /* 方向指令跳变时复位 yaw PID, 防止积分饱和 */
-        static float prev_target_direction = -999.0f;
-        if (cmd_local.target_direction != prev_target_direction) {
+        /* 方向大幅跳变时复位 yaw PID (平滑积分不触发) */
+        static float prev_target_direction = 0.0f;
+        if (fabsf(cmd_local.target_direction - prev_target_direction) > 0.5f) {
             pid_reset(&g_yaw_angle_pid);
             pid_reset(&g_yaw_pid);
-            prev_target_direction = cmd_local.target_direction;
         }
+        prev_target_direction = cmd_local.target_direction;
 
         /* 外环: 角度误差 → 角速度修正 */
         float rate_correction = pid_calculate(&g_yaw_angle_pid, cmd_local.target_direction, yaw_cur);
@@ -581,11 +581,23 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd * 2.3f;
+    cmd->target_speed     = ctrl->velocity_cmd * 3.3f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
-    cmd->target_direction = sensor->angle_yaw + ctrl->steering_cmd * REMOTE_STEER_GAIN_RAD;
+    /* 持久化 yaw 目标: 上电=当前角度, 摇杆积分修改, 回中锁定 */
+    {
+        static float persist_yaw = 0.0f;
+        static bool  persist_init = false;
+        if (!persist_init) {
+            persist_yaw = sensor->angle_yaw;
+            persist_init = true;
+        }
+        persist_yaw += ctrl->steering_cmd * REMOTE_STEER_GAIN_RAD * ROBOT_CONTROL_DT;
+        while (persist_yaw >  M_PI) persist_yaw -= 2.0f * M_PI;
+        while (persist_yaw < -M_PI) persist_yaw += 2.0f * M_PI;
+        cmd->target_direction = persist_yaw;
+    }
 
 #if ENABLE_SQUARE_TEST
     /* 标定完成后才开始计时, 避免标定期消耗折返测试的启动延迟 */
