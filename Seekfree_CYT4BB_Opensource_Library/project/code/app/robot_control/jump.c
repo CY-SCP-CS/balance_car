@@ -387,7 +387,7 @@ void jump_start(float target_speed) {
         pid_reset(&g_leg_left_pid.back);
         pid_reset(&g_leg_right_pid.front);
         pid_reset(&g_leg_right_pid.back);
-        enter_state(JUMP_SQUAT);
+        enter_state(JUMP_INTERVAL);
     }
 }
 
