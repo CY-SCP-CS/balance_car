@@ -456,7 +456,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
     sensor->gyro_roll      = ctrl->gyro_roll_rate;
-    sensor->accel_z        = 0.0f;
+    sensor->accel_z        = ctrl->accel_z;
 
     /* 上电第一次读到的 yaw 作为 0 点 */
     {
@@ -581,7 +581,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd * 3.3f;
+    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;

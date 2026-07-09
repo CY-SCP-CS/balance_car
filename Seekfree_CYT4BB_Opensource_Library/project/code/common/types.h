@@ -39,6 +39,7 @@ typedef struct {
     float gyro_pitch_rate;
     float gyro_yaw_rate;
     float gyro_roll_rate;
+    float accel_z;
     float steering_cmd;
     float velocity_cmd;
     bool on_bridge;
