@@ -17,6 +17,8 @@ void ui_init(UI_Page_t page);
 void ui_update(const Ctrl_Input_t    *fb,
                const Nav_Input_t     *nav_input,
                const Nav_Output_t    *nav_output,
-               const Vision_Result_t *vision);
+               const Nav_State_t     *nav_state,
+               const Vision_Result_t *vision,
+               Vision_Mode_t          vision_mode);
 
 #endif

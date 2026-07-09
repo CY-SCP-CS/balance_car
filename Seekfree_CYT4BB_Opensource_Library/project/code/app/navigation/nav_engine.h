@@ -7,6 +7,8 @@
 
 #define NAV_LOOP_DT_S   0.001f
 #define NAV_LOOP_DT_MS  1u
+#define NAV_RECORD_MAX_KEYPOINTS  16u
+#define NAV_RECORD_MAX_SEGMENTS   32u
 
 typedef enum {
     NAV_ACTION_IDLE = 0,
@@ -69,6 +71,27 @@ typedef struct {
     bool safety_stop;
 } Nav_Output_t;
 
+typedef enum {
+    NAV_ROUTE_IDLE = 0,
+    NAV_ROUTE_RECORDING,
+    NAV_ROUTE_READY,
+    NAV_ROUTE_REPLAYING,
+} Nav_Route_Mode_t;
+
+typedef struct {
+    float distance_m;
+    float yaw_rad;
+    uint32 time_ms;
+} Nav_Keypoint_t;
+
+typedef struct {
+    Nav_Route_Mode_t mode;
+    uint8 keypoint_count;
+    uint8 segment_count;
+    bool route_ready;
+    bool overflow;
+} Nav_Route_Record_State_t;
+
 void         nav_init                   (const Nav_Config_t *config);
 void         nav_set_route              (const Nav_Segment_t *route, uint8 route_len);
 void         nav_start                  (const Nav_Input_t *input);
@@ -80,5 +103,13 @@ void         nav_apply_ctrl             (Ctrl_Input_t *ctrl, const Nav_Output_t 
 Nav_Config_t  nav_get_config            (void);
 void          nav_set_config            (const Nav_Config_t *config);
 Nav_Config_t *nav_config                (void);
+bool          nav_route_record_start    (const Nav_Input_t *input);
+bool          nav_route_record_keypoint (const Nav_Input_t *input);
+bool          nav_route_record_finish   (void);
+void          nav_route_record_reset    (void);
+bool          nav_route_replay_start    (const Nav_Input_t *input);
+void          nav_route_replay_stop     (void);
+Nav_Route_Record_State_t nav_route_record_get_state(void);
+const Nav_Segment_t *nav_route_recorded_route(uint8 *route_len);
 
 #endif

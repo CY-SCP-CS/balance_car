@@ -2,11 +2,12 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/common/types.h"
 #include "../code/app/navigation/nav_engine.h"
+#include "../code/app/navigation/route_remote.h"
 #include "../code/app/vision/vision_pipeline.h"
-#include "../code/hmi/ui/ui_manager.h"
 #include "../code/app/robot_control/robot_control.h"
 #include "../code/app/robot_control/small_driver_uart_control.h"
 #include "../code/app/remote/remote_comm.h"
+#include "../code/app/remote/remote_debug.h"
 #include "../code/app/robot_control/jump.h"
 #include "../code/control/leg/angle_offset.h"
 
@@ -24,6 +25,7 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
+    remote_debug_init();
 
     if(!imu_init())
     {
@@ -34,8 +36,7 @@ int main(void)
     nav_init(NULL);
     vision_init();
 
-   // ui_init(UI_PAGE_IMU_DEBUG);//UI_PAGE_IMU_DEBUG UI_PAGE_NAV_DEBUG UI_PAGE_REMOTE
-
+    // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。
     small_driver_uart_init();
     remote_comm_init();
     robot_control_init();
@@ -66,20 +67,25 @@ int main(void)
         imu_update(&g_ctrl);// IMU update: for testing, can be moved to timer ISR
         // g_ctrl.body_pitch / body_roll / gyro_pitch_rate / gyro_yaw_rate (rad, rad/s)
 
+        remote_comm_update(&g_ctrl);
+
         vision_update(&g_vision);
-        vision_feed_nav_input(&g_nav_input, &g_vision);
 
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
-        Nav_Output_t nav_out = nav_update(&g_nav_input);
-        nav_apply_ctrl(&g_ctrl, &nav_out);
-        remote_comm_update(&g_ctrl);
+        route_remote_update(&g_nav_input);
+
+        {
+            Nav_Route_Record_State_t route_state = nav_route_record_get_state();
+
+            if (route_state.mode == NAV_ROUTE_REPLAYING) {
+                Nav_Output_t nav_out = nav_update(&g_nav_input);
+                nav_apply_ctrl(&g_ctrl, &nav_out);
+            }
+        }
 
         small_driver_get_angle(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
         system_delay_ms(1);
-        //ui_update(&g_ctrl, &g_nav_input, &nav_out, &g_vision);
-        // Dashboard CH1:pitch CH2:roll CH3:gyro_pitch_rate
-        //           CH4:velocity_cmd CH5:steering_cmd CH6:segment_index/safety_stop
 
     }
 }

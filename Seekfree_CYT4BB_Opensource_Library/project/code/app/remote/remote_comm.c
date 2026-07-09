@@ -70,9 +70,11 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         lora3a22_finsh_flag = 0;
 
         for (uint8 i = 0u; i < 4u; i++) {
-            float raw_value = remote_normalize_joystick(remote_get_raw_joystick(i));
-            g_remote_filtered_joystick[i] += (raw_value - g_remote_filtered_joystick[i]) * REMOTE_LPF_ALPHA;
-            g_remote_state.joystick[i] = g_remote_filtered_joystick[i];
+            int16 raw_value = remote_get_raw_joystick(i);
+            float normalized_value = remote_normalize_joystick(raw_value);
+            g_remote_filtered_joystick[i] +=
+                (normalized_value - g_remote_filtered_joystick[i]) * REMOTE_LPF_ALPHA;
+            g_remote_state.joystick[i] = raw_value;
             g_remote_state.key[i] = lora3a22_uart_transfer.key[i];
             g_remote_state.switch_key[i] = lora3a22_uart_transfer.switch_key[i];
         }
@@ -85,7 +87,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     } else {
         g_remote_state.connected = false;
         for (uint8 i = 0u; i < 4u; i++) {
-            g_remote_state.joystick[i] = 0.0f;
+            g_remote_state.joystick[i] = 0;
             g_remote_filtered_joystick[i] = 0.0f;
             g_remote_state.key[i] = 0u;
         }
@@ -96,36 +98,26 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     if (ctrl == NULL) {
         return;
     }
-    if(g_remote_state.key[2] != 0u)
-    {
-        ctrl->on_bridge = 1;
-    }
 
-    /* 仅响应 PB8 对应的肩键 */
-    
+    ctrl->on_bridge = (g_remote_state.switch_key[0] != 0u);
+
+    if (!g_remote_state.connected) {
+        ctrl->velocity_cmd = 0.0f;
+        ctrl->steering_cmd = 0.0f;
+        g_remote_prev_velocity_cmd = 0.0f;
+        g_remote_prev_steering_cmd = 0.0f;
+        return;
+    }
 
     /* 依据遥控协议注释：
      * joystick[0] = 左摇杆 X（左右）
      * joystick[1] = 左摇杆 Y（前后）
      * 这里把左摇杆前后控制速度，左右控制转向。 */
-    float velocity_cmd = -g_remote_state.joystick[1];
-    float steering_cmd = -g_remote_state.joystick[0];
+    float velocity_cmd = g_remote_filtered_joystick[1];
+    float steering_cmd = g_remote_filtered_joystick[2];
 
-    /* 加速度前馈：让大幅度推杆时前馈更强，接近极限时更有冲劲。 */
-    float velocity_mag = remote_absf(velocity_cmd);
-    float steering_mag = remote_absf(steering_cmd);
-
-    float velocity_curve = powf(velocity_mag, REMOTE_FF_CURVE_POWER);
-    float steering_curve = powf(steering_mag, REMOTE_FF_CURVE_POWER);
-
-    float velocity_gain = REMOTE_FF_GAIN_BASE * (1.0f + REMOTE_FF_GAIN_SCALE * velocity_curve);
-    float steering_gain = REMOTE_FF_GAIN_BASE * (1.0f + REMOTE_FF_GAIN_SCALE * steering_curve);
-
-    float velocity_ff = (velocity_cmd - g_remote_prev_velocity_cmd) * velocity_gain;
-    float steering_ff = (steering_cmd - g_remote_prev_steering_cmd) * steering_gain;
-
-    ctrl->velocity_cmd = remote_clamp(velocity_cmd + velocity_ff, -1.0f, 1.0f);
-    ctrl->steering_cmd = remote_clamp(steering_cmd + steering_ff, -1.0f, 1.0f);
+    ctrl->velocity_cmd = remote_clamp(velocity_cmd, -1.0f, 1.0f);
+    ctrl->steering_cmd = remote_clamp(steering_cmd, -1.0f, 1.0f);
 
     g_remote_prev_velocity_cmd = velocity_cmd;
     g_remote_prev_steering_cmd = steering_cmd;

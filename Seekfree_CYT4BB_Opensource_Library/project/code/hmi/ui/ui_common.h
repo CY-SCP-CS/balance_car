@@ -17,13 +17,15 @@
 #define DEBUG_DISPLAY_DEVICE    SEEKFREE_ASSISTANT_DEBUG_UART
 
 /* 每个 hmi/ui 页面 update 函数的统一入参。仅供 hmi/ui 内部使用：
- * ui_manager.c 从 ui_update() 的 4 个独立参数组装出一个 UI_Frame_t，
+ * ui_manager.c 从 ui_update() 的 6 个独立参数组装出一个 UI_Frame_t，
  * 再分发给当前激活页面。 */
 typedef struct {
     const Ctrl_Input_t    *fb;
     const Nav_Input_t     *nav_input;
     const Nav_Output_t    *nav_output;
+    const Nav_State_t     *nav_state;
     const Vision_Result_t *vision;
+    Vision_Mode_t          vision_mode;
 } UI_Frame_t;
 
 /* 除 UI_PAGE_REMOTE（需要自己的 WiFi/摄像头传输初始化）外，
