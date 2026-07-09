@@ -1125,6 +1125,12 @@
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_engine.h</name>
                 </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\route_remote.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\route_remote.h</name>
+                </file>
             </group>
             <group>
                 <name>param</name>
