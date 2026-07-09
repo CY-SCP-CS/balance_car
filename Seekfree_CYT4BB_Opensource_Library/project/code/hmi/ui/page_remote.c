@@ -1,8 +1,10 @@
 #include "page_remote.h"
 
+#include <string.h>
+
+#include "zf_common_headfile.h"
 #include "seekfree_assistant.h"
 #include "seekfree_assistant_interface.h"
-#include "cy_device_headers.h"
 #include "zf_device_wifi_spi.h"
 #include "zf_device_mt9v03x.h"
 #include "../../app/vision/vision_annotate.h"
