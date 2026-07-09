@@ -1,3 +1,4 @@
+#include "nav_adapter.h"
 #include "nav_internal.h"
 
 #include "../robot_control/robot_control.h"

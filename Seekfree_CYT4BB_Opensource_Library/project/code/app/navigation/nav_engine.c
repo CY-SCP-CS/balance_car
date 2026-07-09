@@ -1,4 +1,5 @@
 #include "nav_internal.h"
+#include "nav_route_record.h"
 
 #include <math.h>
 #include <stddef.h>

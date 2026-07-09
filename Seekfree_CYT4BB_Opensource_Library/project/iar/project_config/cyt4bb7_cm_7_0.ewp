@@ -1123,6 +1123,9 @@
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_adapter.c</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_adapter.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_engine.c</name>
                 </file>
                 <file>
@@ -1133,6 +1136,9 @@
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_record.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_record.h</name>
                 </file>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\route_remote.c</name>
