@@ -59,7 +59,7 @@ int main(void)
     }
     zf_log(0, "Angle calibration OK.");
 
-    ///jump_start();   // 测试跳跃
+    //jump_start(0.0f);   // 测试跳跃
 
     while(true)
     {

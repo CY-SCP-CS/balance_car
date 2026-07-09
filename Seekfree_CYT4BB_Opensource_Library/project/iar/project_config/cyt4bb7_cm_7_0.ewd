@@ -212,7 +212,7 @@
                 </option>
                 <option>
                     <name>OCMulticoreAMPConfigType</name>
-                    <state>0</state>
+                    <state>2</state>
                 </option>
                 <option>
                     <name>OCMulticoreSessionFile</name>

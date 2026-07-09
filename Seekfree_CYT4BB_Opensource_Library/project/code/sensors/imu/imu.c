@@ -30,6 +30,7 @@ void imu_update(Ctrl_Input_t *fb)
     fb->gyro_pitch_rate = imu660rc_gyro_transition(imu660rc_gyro_y) * DEG_TO_RAD;
     fb->gyro_yaw_rate   = imu660rc_gyro_transition(imu660rc_gyro_z) * DEG_TO_RAD;
     fb->gyro_roll_rate  = imu660rc_gyro_transition(imu660rc_gyro_x) * DEG_TO_RAD;
+    fb->accel_z         = imu660rc_acc_transition(imu660rc_acc_z);
 }
 
 void imu_get_debug_data(IMU_Debug_t *out)
@@ -49,6 +50,7 @@ void imu_get_debug_data(IMU_Debug_t *out)
 
 static float g_pitch           = 0.0f;
 static float g_roll            = 0.0f;
+static float g_accel_z         = 0.0f;
 static float g_gyro_pitch_rate = 0.0f;
 static float g_gyro_yaw_rate   = 0.0f;
 
@@ -74,6 +76,8 @@ void imu_poll(void)
     float ay = imu660rc_acc_transition(imu660rc_acc_y);
     float az = imu660rc_acc_transition(imu660rc_acc_z);
 
+    g_accel_z = az;
+
     // 陀螺仪轴映射：Y → 俯仰，X → 横滚，Z → 偏航
     float gyro_pitch = imu660rc_gyro_transition(imu660rc_gyro_y) * DEG_TO_RAD;
     float gyro_roll  = imu660rc_gyro_transition(imu660rc_gyro_x) * DEG_TO_RAD;
@@ -97,6 +101,7 @@ void imu_update(Ctrl_Input_t *fb)
 {
     fb->body_pitch      = g_pitch;
     fb->body_roll       = g_roll;
+    fb->accel_z         = g_accel_z;
     fb->gyro_pitch_rate = g_gyro_pitch_rate;
     fb->gyro_yaw_rate   = g_gyro_yaw_rate;
 }
