@@ -133,20 +133,15 @@ static bool storage_read_slot(uint8 slot,
     return true;
 }
 
-static bool storage_find_latest_slots(uint8 *latest_slot,
-                                      uint32 *latest_sequence,
-                                      uint8 *previous_slot,
-                                      uint32 *previous_sequence)
+static bool storage_find_latest_slot(uint8 *latest_slot,
+                                     uint32 *latest_sequence)
 {
     bool have_latest = false;
-    bool have_previous = false;
     uint8 route_len;
     uint32 sequence;
 
     *latest_slot = 0u;
     *latest_sequence = 0u;
-    *previous_slot = NAV_ROUTE_STORAGE_SLOT_COUNT;
-    *previous_sequence = 0u;
 
     for (uint8 slot = 0u; slot < NAV_ROUTE_STORAGE_SLOT_COUNT; slot++) {
         if (!storage_read_slot(slot,
@@ -158,24 +153,62 @@ static bool storage_find_latest_slots(uint8 *latest_slot,
         }
 
         if (!have_latest || sequence > *latest_sequence) {
-            if (have_latest) {
-                *previous_slot = *latest_slot;
-                *previous_sequence = *latest_sequence;
-                have_previous = true;
-            }
-
             *latest_slot = slot;
             *latest_sequence = sequence;
             have_latest = true;
-        } else if (!have_previous || sequence > *previous_sequence) {
-            *previous_slot = slot;
-            *previous_sequence = sequence;
-            have_previous = true;
         }
     }
 
-    (void)have_previous;
     return have_latest;
+}
+
+static bool storage_find_history_slot(uint8 history_index, uint8 *history_slot)
+{
+    bool used[NAV_ROUTE_STORAGE_SLOT_COUNT] = { false };
+    uint8 selected_slot = 0u;
+
+    if (history_slot == NULL ||
+        history_index >= NAV_ROUTE_STORAGE_SLOT_COUNT) {
+        return false;
+    }
+
+    for (uint8 rank = 0u; rank <= history_index; rank++) {
+        bool have_best = false;
+        uint8 best_slot = 0u;
+        uint8 route_len;
+        uint32 best_sequence = 0u;
+        uint32 sequence;
+
+        for (uint8 slot = 0u; slot < NAV_ROUTE_STORAGE_SLOT_COUNT; slot++) {
+            if (used[slot]) {
+                continue;
+            }
+
+            if (!storage_read_slot(slot,
+                                   NULL,
+                                   NAV_RECORD_MAX_SEGMENTS,
+                                   &route_len,
+                                   &sequence)) {
+                continue;
+            }
+
+            if (!have_best || sequence > best_sequence) {
+                best_slot = slot;
+                best_sequence = sequence;
+                have_best = true;
+            }
+        }
+
+        if (!have_best) {
+            return false;
+        }
+
+        used[best_slot] = true;
+        selected_slot = best_slot;
+    }
+
+    *history_slot = selected_slot;
+    return true;
 }
 
 void nav_route_storage_init(void)
@@ -186,10 +219,8 @@ void nav_route_storage_init(void)
 bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
 {
     uint8 latest_slot = 0u;
-    uint8 previous_slot = 0u;
     uint8 write_slot = 0u;
     uint32 latest_sequence = 0u;
-    uint32 previous_sequence = 0u;
     uint32 sequence = 1u;
 
     if (route == NULL ||
@@ -202,10 +233,7 @@ bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
 
     storage_ensure_init();
 
-    if (storage_find_latest_slots(&latest_slot,
-                                  &latest_sequence,
-                                  &previous_slot,
-                                  &previous_sequence)) {
+    if (storage_find_latest_slot(&latest_slot, &latest_sequence)) {
         write_slot = (uint8)((latest_slot + 1u) % NAV_ROUTE_STORAGE_SLOT_COUNT);
         sequence = latest_sequence + 1u;
     }
@@ -236,14 +264,12 @@ bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
                              NULL);
 }
 
-bool nav_route_storage_load(Nav_Segment_t *route,
-                            uint8 max_route_len,
-                            uint8 *route_len)
+bool nav_route_storage_load_history(Nav_Segment_t *route,
+                                    uint8 max_route_len,
+                                    uint8 *route_len,
+                                    uint8 history_index)
 {
-    uint8 latest_slot = 0u;
-    uint8 previous_slot = 0u;
-    uint32 latest_sequence = 0u;
-    uint32 previous_sequence = 0u;
+    uint8 history_slot = 0u;
 
     if (route == NULL ||
         route_len == NULL ||
@@ -254,41 +280,23 @@ bool nav_route_storage_load(Nav_Segment_t *route,
 
     storage_ensure_init();
 
-    if (!storage_find_latest_slots(&latest_slot,
-                                   &latest_sequence,
-                                   &previous_slot,
-                                   &previous_sequence)) {
+    if (!storage_find_history_slot(history_index, &history_slot)) {
         return false;
     }
 
-    return storage_read_slot(latest_slot, route, max_route_len, route_len, NULL);
+    return storage_read_slot(history_slot, route, max_route_len, route_len, NULL);
+}
+
+bool nav_route_storage_load(Nav_Segment_t *route,
+                            uint8 max_route_len,
+                            uint8 *route_len)
+{
+    return nav_route_storage_load_history(route, max_route_len, route_len, 0u);
 }
 
 bool nav_route_storage_load_previous(Nav_Segment_t *route,
                                      uint8 max_route_len,
                                      uint8 *route_len)
 {
-    uint8 latest_slot = 0u;
-    uint8 previous_slot = 0u;
-    uint32 latest_sequence = 0u;
-    uint32 previous_sequence = 0u;
-
-    if (route == NULL ||
-        route_len == NULL ||
-        max_route_len == 0u ||
-        NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
-        return false;
-    }
-
-    storage_ensure_init();
-
-    if (!storage_find_latest_slots(&latest_slot,
-                                   &latest_sequence,
-                                   &previous_slot,
-                                   &previous_sequence) ||
-        previous_slot >= NAV_ROUTE_STORAGE_SLOT_COUNT) {
-        return false;
-    }
-
-    return storage_read_slot(previous_slot, route, max_route_len, route_len, NULL);
+    return nav_route_storage_load_history(route, max_route_len, route_len, 1u);
 }

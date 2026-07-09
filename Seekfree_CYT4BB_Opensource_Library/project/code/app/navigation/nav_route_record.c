@@ -197,13 +197,14 @@ static void set_loaded_route_ready(uint8 route_len)
     g_record_state.overflow = false;
 }
 
-bool nav_route_record_load_saved(void)
+bool nav_route_record_load_saved_history(uint8 history_index)
 {
     uint8 route_len = 0u;
 
-    if (!nav_route_storage_load(g_record_route,
-                                NAV_RECORD_MAX_SEGMENTS,
-                                &route_len)) {
+    if (!nav_route_storage_load_history(g_record_route,
+                                        NAV_RECORD_MAX_SEGMENTS,
+                                        &route_len,
+                                        history_index)) {
         return false;
     }
 
@@ -212,19 +213,14 @@ bool nav_route_record_load_saved(void)
     return true;
 }
 
+bool nav_route_record_load_saved(void)
+{
+    return nav_route_record_load_saved_history(0u);
+}
+
 bool nav_route_record_load_previous_saved(void)
 {
-    uint8 route_len = 0u;
-
-    if (!nav_route_storage_load_previous(g_record_route,
-                                         NAV_RECORD_MAX_SEGMENTS,
-                                         &route_len)) {
-        return false;
-    }
-
-    set_loaded_route_ready(route_len);
-
-    return true;
+    return nav_route_record_load_saved_history(1u);
 }
 
 bool nav_route_replay_start(const Nav_Input_t *input)
