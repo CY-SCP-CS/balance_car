@@ -66,6 +66,15 @@ static uint32 limit_timeout(uint32 timeout_ms)
         NAV_RECORD_TIMEOUT_MAX_MS : timeout_ms;
 }
 
+static float segment_progress(float segment_distance, float target_distance_m)
+{
+    if (target_distance_m <= 0.0f) {
+        return 1.0f;
+    }
+
+    return clamp(segment_distance / target_distance_m, 0.0f, 1.0f);
+}
+
 static bool append_record_segment(Nav_Action_t action,
                                   float target_distance_m,
                                   float target_yaw_deg,
@@ -108,19 +117,19 @@ static bool build_recorded_route(void)
         }
 
         if (delta_distance >= NAV_RECORD_MIN_DISTANCE_M) {
+            float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
             uint32 timeout_ms = NAV_RECORD_STRAIGHT_TIMEOUT_BASE_MS +
-                (uint32)(delta_distance * (float)NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS);
+                (uint32)(delta_distance * (float)NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS) +
+                (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
 
             if (!append_record_segment(NAV_ACTION_GO_STRAIGHT,
                                        delta_distance,
-                                       0.0f,
+                                       turn_deg,
                                        NAV_RECORD_STRAIGHT_SPEED,
                                        limit_timeout(timeout_ms))) {
                 return false;
             }
-        }
-
-        if (fabsf(delta_yaw) >= NAV_RECORD_MIN_TURN_RAD) {
+        } else if (fabsf(delta_yaw) >= NAV_RECORD_MIN_TURN_RAD) {
             float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
             uint32 timeout_ms = NAV_RECORD_TURN_TIMEOUT_BASE_MS +
                 (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
@@ -276,15 +285,19 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
 
     const Nav_Segment_t *seg = &g_route[g_state.segment_index];
     float segment_distance = input->distance_m - g_segment_start_distance;
-    float hold_yaw = g_segment_start_yaw + seg->target_yaw_deg * NAV_DEG_TO_RAD;
-    float yaw_error = wrap_pi(hold_yaw - input->yaw_rad);
+    float target_yaw_rad = seg->target_yaw_deg * NAV_DEG_TO_RAD;
+    float final_yaw = g_segment_start_yaw + target_yaw_rad;
+    float yaw_error = wrap_pi(final_yaw - input->yaw_rad);
     bool timed_out = timeout_elapsed(input, seg);
 
     g_state.segment_distance_m = segment_distance;
-    g_state.yaw_error_rad = yaw_error;
 
     switch (seg->action) {
     case NAV_ACTION_GO_STRAIGHT:
+    {
+        float progress = segment_progress(segment_distance, seg->target_distance_m);
+        float hold_yaw = g_segment_start_yaw + target_yaw_rad * progress;
+        yaw_error = wrap_pi(hold_yaw - input->yaw_rad);
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
 
@@ -297,6 +310,7 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
             advance_segment(input);
         }
         break;
+    }
 
     case NAV_ACTION_WAIT_LANDMARK:
         out.velocity_cmd = seg->target_speed;
@@ -328,6 +342,7 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
         break;
     }
 
+    g_state.yaw_error_rad = yaw_error;
     out.steering_cmd = clamp(out.steering_cmd,
                              -g_cfg.steering_limit,
                              g_cfg.steering_limit);
