@@ -10,6 +10,7 @@
 static uint8 g_prev_key[4] = {0u, 0u, 0u, 0u};
 static uint8 g_prev_record_switch;
 static uint8 g_prev_play_switch;
+static bool g_prev_connected;
 
 static bool remote_key_rising(const Remote_State_t *remote, uint8 index)
 {
@@ -43,12 +44,30 @@ void route_remote_update(const Nav_Input_t *input)
     bool play_switch_rising;
     Nav_Route_Record_State_t state;
 
-    if (input == NULL || remote == NULL || !remote->connected) {
+    if (remote == NULL) {
         return;
     }
 
     record_switch = remote->switch_key[ROUTE_RECORD_SWITCH] != 0u ? 1u : 0u;
     play_switch = remote->switch_key[ROUTE_PLAY_SWITCH] != 0u ? 1u : 0u;
+
+    if (!remote->connected) {
+        g_prev_connected = false;
+        return;
+    }
+
+    if (input == NULL) {
+        return;
+    }
+
+    if (!g_prev_connected) {
+        g_prev_connected = true;
+        g_prev_record_switch = record_switch;
+        g_prev_play_switch = play_switch;
+        remote_key_sync(remote, ROUTE_RECORD_KEY);
+        return;
+    }
+
     record_switch_rising = (record_switch != 0u && g_prev_record_switch == 0u);
     record_switch_falling = (record_switch == 0u && g_prev_record_switch != 0u);
     play_switch_rising = (play_switch != 0u && g_prev_play_switch == 0u);
