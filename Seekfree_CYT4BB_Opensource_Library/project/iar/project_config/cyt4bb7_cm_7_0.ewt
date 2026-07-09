@@ -1453,6 +1453,12 @@
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_record.h</name>
                 </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_storage.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_storage.h</name>
+                </file>
             </group>
             <group>
                 <name>param</name>

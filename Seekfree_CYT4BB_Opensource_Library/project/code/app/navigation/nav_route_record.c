@@ -1,5 +1,6 @@
 #include "nav_route_record.h"
 #include "nav_internal.h"
+#include "nav_route_storage.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -172,6 +173,7 @@ bool nav_route_record_finish(void)
     }
 
     g_record_state.mode = NAV_ROUTE_READY;
+    (void)nav_route_storage_save(g_record_route, g_record_state.segment_count);
     return true;
 }
 
@@ -183,6 +185,26 @@ void nav_route_record_reset(void)
     g_record_state.segment_count = 0u;
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
+}
+
+bool nav_route_record_load_saved(void)
+{
+    uint8 route_len = 0u;
+
+    if (!nav_route_storage_load(g_record_route,
+                                NAV_RECORD_MAX_SEGMENTS,
+                                &route_len)) {
+        return false;
+    }
+
+    nav_stop();
+    g_record_state.mode = NAV_ROUTE_READY;
+    g_record_state.keypoint_count = 0u;
+    g_record_state.segment_count = route_len;
+    g_record_state.route_ready = true;
+    g_record_state.overflow = false;
+
+    return true;
 }
 
 bool nav_route_replay_start(const Nav_Input_t *input)

@@ -31,6 +31,7 @@ bool nav_route_record_start(const Nav_Input_t *input);
 bool nav_route_record_keypoint(const Nav_Input_t *input);
 bool nav_route_record_finish(void);
 void nav_route_record_reset(void);
+bool nav_route_record_load_saved(void);
 bool nav_route_replay_start(const Nav_Input_t *input);
 void nav_route_replay_stop(void);
 Nav_Route_Record_State_t nav_route_record_get_state(void);

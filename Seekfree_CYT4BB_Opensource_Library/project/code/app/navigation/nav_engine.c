@@ -93,6 +93,7 @@ void nav_init(const Nav_Config_t *config)
     g_route_len = NAV_DEFAULT_ROUTE_LEN;
     nav_stop();
     nav_route_record_reset();
+    (void)nav_route_record_load_saved();
 }
 
 void nav_set_route(const Nav_Segment_t *route, uint8 route_len)
