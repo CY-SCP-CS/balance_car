@@ -121,6 +121,14 @@ static void run_squat(const Sensor_data_t *sensor,
 {
     Foot_position_t pos = { 0.0f, OFF_SQUAT_Y };
 
+    if (g_cycle == 1) {
+        /* 从 INTERVAL (正常控制) 切回跳跃, 复位跳跃腿 PID */
+        pid_reset(&g_leg_left_pid.front);
+        pid_reset(&g_leg_left_pid.back);
+        pid_reset(&g_leg_right_pid.front);
+        pid_reset(&g_leg_right_pid.back);
+    }
+
     balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
 
     leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
@@ -318,6 +326,19 @@ static void run_cushion(const Sensor_data_t *sensor,
         g_leg_left_pid.back.kp   = 1200.0f;
         g_leg_right_pid.front.kp = 1200.0f;
         g_leg_right_pid.back.kp  = 1200.0f;
+
+        /* 切回正常控制前, 复位正常控制路径的所有 PID, 清除指令 */
+        robot_control_reset_balance_pid();
+        robot_control_reset_leg_speed_pid();
+        robot_control_reset_leg_pid();
+        pid_reset(&g_yaw_angle_pid);
+        pid_reset(&g_yaw_pid);
+        g_move_cmd.target_direction = 0.0f;
+        g_move_cmd.target_speed     = 0.0f;
+        g_move_cmd.target_distance  = 0.0f;
+        g_move_cmd.target_roll      = 0.0f;
+        g_move_cmd.target_height    = 0.0f;
+
         g_jump_num++;
         if (g_jump_num < TOTAL_JUMPS) {
             enter_state(JUMP_INTERVAL);
@@ -327,18 +348,13 @@ static void run_cushion(const Sensor_data_t *sensor,
     }
 }
 
-/* ── INTERVAL: 正常站立 ── */
+/* ── INTERVAL: 正常站立, 电机由 control_task 接管 ── */
 static void run_interval(const Sensor_data_t *sensor,
                          Motor_cmd_duty_t *motor_cmd)
 {
-    Foot_position_t pos = { 0.0f, 0.0f };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-
-    robot_control_leg_speed_feedback(sensor, &pos, &pos);
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
+    (void)sensor;
+    (void)motor_cmd;
+    /* 只计时, 不输出电机 — control_task 负责全部控制 */
 
     if (g_cycle >= INTERVAL_CYCLES) {
         reset_balance();
@@ -346,17 +362,13 @@ static void run_interval(const Sensor_data_t *sensor,
     }
 }
 
-/* ── END: 恢复, 然后空闲 ── */
+/* ── END: 恢复站立, 电机由 control_task 接管 ── */
 static void run_end(const Sensor_data_t *sensor,
                     Motor_cmd_duty_t *motor_cmd)
 {
-    Foot_position_t pos = { 0.0f, 0.0f };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
+    (void)sensor;
+    (void)motor_cmd;
+    /* 只计时, 不输出电机 — control_task 负责全部控制 */
 
     if (g_cycle >= 500) {
         enter_state(JUMP_IDLE);
@@ -394,6 +406,15 @@ void jump_start(float target_speed) {
 void jump_stop(void) {
     if (g_state != JUMP_IDLE && g_state != JUMP_END) {
         reset_balance();
+        robot_control_reset_leg_speed_pid();
+        robot_control_reset_leg_pid();
+        pid_reset(&g_yaw_angle_pid);
+        pid_reset(&g_yaw_pid);
+        g_move_cmd.target_direction = 0.0f;
+        g_move_cmd.target_speed     = 0.0f;
+        g_move_cmd.target_distance  = 0.0f;
+        g_move_cmd.target_roll      = 0.0f;
+        g_move_cmd.target_height    = 0.0f;
         enter_state(JUMP_END);
     }
 }
@@ -404,6 +425,12 @@ bool jump_is_active(void) {
 
 bool jump_is_done(void) {
     return (g_state == JUMP_END) || (g_state == JUMP_IDLE);
+}
+
+bool jump_blocks_normal_control(void) {
+    return (g_state == JUMP_SQUAT || g_state == JUMP_PUSH ||
+            g_state == JUMP_FLY_UP || g_state == JUMP_FLY_DOWN ||
+            g_state == JUMP_CUSHION);
 }
 
 void jump_control(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cmd) {

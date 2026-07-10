@@ -25,6 +25,11 @@ void jump_stop(void);
 bool jump_is_active(void);   /* 跳跃序列是否正在运⾏ */
 bool jump_is_done(void);     /* 跳跃是否已全部结束 */
 
+/* ─── 是否阻断正常控制 (SQUAT/PUSH/FLY_UP/FLY_DOWN/CUSHION 返回 true) ───
+ *  INTERVAL / END 返回 false, 由 control_task 接管电机。
+ */
+bool jump_blocks_normal_control(void);
+
 /* ─── 每周期调⽤ (放⼊ control_task) ───
  *  sensor   - 当前传感器数据
  *  motor_cmd- 电机指令 (跳转过程中会写⼊腿 PWM 和轮 PWM)
