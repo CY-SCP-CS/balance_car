@@ -5,7 +5,7 @@
 #include "zf_driver_pwm.h"
 
 // ---- 引脚配置（根据实际硬件修改）----
-#define BUZZER_PWM_CH    TCPWM_CH48_P20_2
+#define BUZZER_PWM_CH    TCPWM_CH29_P19_4
 #define BUZZER_FREQ_HZ   2000
 #define BUZZER_DUTY      5000    // 50%
 // -------------------------------------
