@@ -2,12 +2,10 @@
 #define HMI_LED_BUZZER_H
 
 #include "zf_common_typedef.h"
-#include "zf_driver_gpio.h"
 #include "zf_driver_pwm.h"
 
 // ---- 引脚配置（根据实际硬件修改）----
-#define LED_PIN          P07_7
-#define BUZZER_PWM_CH    TCPWM_CH48_P14_0
+#define BUZZER_PWM_CH    TCPWM_CH48_P20_2
 #define BUZZER_FREQ_HZ   2000
 #define BUZZER_DUTY      5000    // 50%
 // -------------------------------------
@@ -21,9 +19,6 @@ typedef enum {
 
 void  led_buzzer_init   (void);
 void  led_buzzer_tick   (uint32 period_ms);  // 周期性调用，单位毫秒
-
-void  led_set           (uint8 on);
-void  led_toggle        (void);
 
 void  buzzer_beep       (Beep_Pattern_t pattern);
 void  buzzer_stop       (void);

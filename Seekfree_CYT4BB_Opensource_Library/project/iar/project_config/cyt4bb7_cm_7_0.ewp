@@ -2048,6 +2048,18 @@
                 </file>
             </group>
             <group>
+                <name>hmi</name>
+                <group>
+                    <name>indicator</name>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.c</name>
+                    </file>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.h</name>
+                    </file>
+                </group>
+            </group>
+            <group>
                 <name>system</name>
                 <group>
                     <name>rev_b</name>

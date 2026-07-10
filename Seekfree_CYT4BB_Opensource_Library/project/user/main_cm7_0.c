@@ -12,6 +12,7 @@
 #include "../code/app/remote/remote_debug.h"
 #include "../code/app/robot_control/jump.h"
 #include "../code/control/leg/angle_offset.h"
+#include "../code/hmi/indicator/led_buzzer.h"
 
 Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
@@ -40,6 +41,7 @@ int main(void)
 
     // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。
     small_driver_uart_init();
+    led_buzzer_init();
     remote_comm_init();
     robot_control_init();
 
@@ -52,6 +54,7 @@ int main(void)
     while (!angle_offset_is_done()) {
         imu_update(&g_ctrl);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+        led_buzzer_tick(1u);
         system_delay_ms(1);
 
         if (angle_offset_has_fault()) {
@@ -87,6 +90,7 @@ int main(void)
 
         small_driver_get_angle(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+        led_buzzer_tick(1u);
         system_delay_ms(1);
 
     }

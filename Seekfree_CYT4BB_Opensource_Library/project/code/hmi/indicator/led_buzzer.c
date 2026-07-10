@@ -24,9 +24,6 @@ static const Beep_Step_t *s_cur_pat   = NULL;
 static uint8              s_step      = 0;
 static uint32             s_elapsed   = 0;
 
-// ---- LED 状态 ----
-static uint8 s_led_state = 0;
-
 // ----------------------------------------------------------------
 static void buzzer_hw_set(uint8 on)
 {
@@ -40,9 +37,6 @@ static void buzzer_hw_set(uint8 on)
 // ----------------------------------------------------------------
 void led_buzzer_init(void)
 {
-    gpio_init(LED_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
-    s_led_state = 0;
-
     pwm_init(BUZZER_PWM_CH, BUZZER_FREQ_HZ, 0);
     s_cur_pat = NULL;
     s_step    = 0;
@@ -74,19 +68,6 @@ void led_buzzer_tick(uint32 period_ms)
             buzzer_hw_set(step->on);
         }
     }
-}
-
-// ----------------------------------------------------------------
-void led_set(uint8 on)
-{
-    s_led_state = on ? 1u : 0u;
-    if (s_led_state) gpio_high(LED_PIN);
-    else             gpio_low(LED_PIN);
-}
-
-void led_toggle(void)
-{
-    led_set(!s_led_state);
 }
 
 // ----------------------------------------------------------------
