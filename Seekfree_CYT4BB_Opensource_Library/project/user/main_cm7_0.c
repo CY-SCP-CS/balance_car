@@ -77,6 +77,7 @@ int main(void)
         vision_update(&g_vision);
 
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
+        vision_feed_nav_input(&g_nav_input, &g_vision);
         route_remote_update(&g_nav_input);
 
         {

@@ -25,7 +25,6 @@
 #define VISION_CIRCLE_COL_END       144u
 #define VISION_CIRCLE_BRIGHT_THRESH 200u  /* pixel counts as "white" above this */
 #define VISION_CIRCLE_MIN_PIXELS    300u  /* minimum white pixels to confirm circle */
-#define VISION_CIRCLE_CONF_SCALE    600u  /* pixel count mapped to confidence 10 */
 
 /* ---- Cone landmark ---- */
 #define VISION_CONE_ROW_START       20u
@@ -35,7 +34,6 @@
 #define VISION_CONE_LO_THRESH       90u   /* cone pixel range in grayscale */
 #define VISION_CONE_HI_THRESH       190u
 #define VISION_CONE_MIN_PIXELS      200u
-#define VISION_CONE_CONF_SCALE      500u
 
 /* ---- Step landmark ---- */
 #define VISION_STEP_ROW_A           55u   /* rows compared for horizontal edge */

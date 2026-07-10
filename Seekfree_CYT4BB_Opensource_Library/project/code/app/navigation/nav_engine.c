@@ -22,11 +22,9 @@ static const Nav_Segment_t g_default_route[NAV_DEFAULT_ROUTE_LEN] = {
 static Nav_Config_t g_cfg = {
     1.2f,
     1.8f,
-    0.35f,
     1.0f,
     0.08f,
-    4.0f * NAV_DEG_TO_RAD,
-    3u
+    4.0f * NAV_DEG_TO_RAD
 };
 
 static const Nav_Segment_t *g_route = g_default_route;
@@ -59,8 +57,7 @@ static bool timeout_elapsed(const Nav_Input_t *input, const Nav_Segment_t *seg)
 static bool landmark_seen(const Nav_Input_t *input, Nav_Landmark_t landmark)
 {
     return landmark != NAV_LANDMARK_NONE &&
-           input->landmark == landmark &&
-           input->landmark_confidence >= g_cfg.landmark_min_confidence;
+           input->landmark == landmark;
 }
 
 static void clear_region_transition(void)
@@ -276,10 +273,6 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
 
-        if (landmark_seen(input, seg->landmark)) {
-            out.steering_cmd += g_cfg.landmark_kp * input->landmark_offset;
-        }
-
         if (segment_distance >= seg->target_distance_m - g_cfg.distance_tolerance_m ||
             timed_out) {
             advance_segment(input);
@@ -292,7 +285,6 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
 
         if (landmark_seen(input, seg->landmark)) {
-            out.steering_cmd += g_cfg.landmark_kp * input->landmark_offset;
             advance_segment(input);
         } else if ((seg->target_distance_m > 0.0f &&
                     segment_distance >= seg->target_distance_m - g_cfg.distance_tolerance_m) ||

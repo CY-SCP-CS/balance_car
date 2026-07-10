@@ -22,8 +22,7 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
 
     input->distance_m = robot_control_get_distance();
 
-    /* landmark / obstacle fields are populated by vision_feed_nav_input()
-       which the caller must invoke before calling nav_input_update_from_ctrl(). */
+    /* Vision updates landmark / obstacle fields after this update. */
 }
 
 void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)

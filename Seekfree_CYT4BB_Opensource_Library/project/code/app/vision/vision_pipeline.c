@@ -20,8 +20,6 @@ void vision_init(void)
     g_last_result.line_offset          = 0.0f;
     g_last_result.line_confidence      = 0u;
     g_last_result.landmark             = NAV_LANDMARK_NONE;
-    g_last_result.landmark_offset      = 0.0f;
-    g_last_result.landmark_confidence  = 0u;
     g_last_result.obstacle_close       = false;
 
     g_last_result.minefield.detected   = false;
@@ -65,8 +63,6 @@ bool vision_update(Vision_Result_t *result)
     g_last_result.line_offset         = line.center_offset;
     g_last_result.line_confidence     = line.confidence;
     g_last_result.landmark            = obs.landmark;
-    g_last_result.landmark_offset     = obs.landmark_offset;
-    g_last_result.landmark_confidence = obs.landmark_confidence;
     g_last_result.obstacle_close      = obs.obstacle_close;
 
     switch (g_mode) {
@@ -97,7 +93,5 @@ void vision_feed_nav_input(Nav_Input_t *input, const Vision_Result_t *v)
     }
 
     input->landmark            = v->landmark;
-    input->landmark_offset     = v->landmark_offset;
-    input->landmark_confidence = v->landmark_confidence;
     input->obstacle_close      = v->obstacle_close;
 }
