@@ -51,6 +51,46 @@ PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 
+/* ==================== 720° 原地旋转 (比赛元素) ==================== */
+
+#define ROTATE720_SPEED     (2.0f * M_PI)   /* 360°/s */
+#define ROTATE720_TARGET    (4.0f * M_PI)   /* 720° = 4π rad */
+#define ROTATE720_MARGIN    (0.4f * M_PI)   /* 10% 冗余 ≈ 72° */
+
+typedef enum {
+    ROTATE720_IDLE = 0,
+    ROTATE720_ACTIVE,
+    ROTATE720_DONE
+} Rotate720State_t;
+
+static Rotate720State_t g_rotate720_state = ROTATE720_IDLE;
+static float            g_rotate720_accum = 0.0f;  /* 累积绝对转角 (rad) */
+static float            g_rotate720_target = 0.0f; /* 持续递增的目标角度, 不归一化 */
+
+/* ─── 720° 旋转公开接口 ─── */
+
+void robot_control_start_rotate_720(void)
+{
+    if (g_rotate720_state == ROTATE720_IDLE) {
+        g_rotate720_state = ROTATE720_ACTIVE;
+        g_rotate720_accum = 0.0f;
+        /* g_rotate720_target 在 control_task 首周期用当前 yaw 初始化 */
+        pid_reset(&g_yaw_pid);
+        pid_reset(&g_yaw_angle_pid);
+    }
+}
+
+bool robot_control_rotate_720_is_done(void)
+{
+    return (g_rotate720_state == ROTATE720_DONE);
+}
+
+void robot_control_reset_rotate_720(void)
+{
+    g_rotate720_state = ROTATE720_IDLE;
+    g_rotate720_accum = 0.0f;
+}
+
 
 void robot_control_init(void){
     //pitch的PID
@@ -118,6 +158,13 @@ void robot_control_reset_balance_pid(void){
 void robot_control_reset_leg_speed_pid(void){
     pid_reset(&g_leg_speed_pid);
     pid_reset(&g_leg_roll_pid);
+}
+
+void robot_control_reset_leg_pid(void){
+    pid_reset(&g_leg_left_pid.front);
+    pid_reset(&g_leg_left_pid.back);
+    pid_reset(&g_leg_right_pid.front);
+    pid_reset(&g_leg_right_pid.back);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -231,12 +278,36 @@ void control_task(void){
 
     if (jump_is_active()) {
         jump_control(&sensor_local, &g_motor_cmd);
-        return;
+        if (jump_blocks_normal_control()) {
+            return;  /* SQUAT/PUSH/FLY/CUSHION: 跳跃独占电机控制 */
+        }
+        /* INTERVAL / END: 跳跃模块只计时, 继续走正常控制路径 */
     }
 
     //pitch平衡环
     pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
         &g_pitch_gyro_pid, &g_motor_cmd);
+
+    /* ── 720° 原地旋转: 持续递增目标角度, 复用现有 yaw 串级 ── */
+    if (g_rotate720_state == ROTATE720_ACTIVE) {
+        /* 首周期用当前 yaw 初始化移动目标 */
+        if (g_rotate720_accum == 0.0f) {
+            g_rotate720_target = sensor_local.angle_yaw;
+        }
+        /* 每周期递增, 不归一化 — yaw 误差归一化逻辑会处理角度回绕 */
+        g_rotate720_target += ROTATE720_SPEED * ROBOT_CONTROL_DT;
+        cmd_local.target_direction = g_rotate720_target;
+
+        /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
+        g_rotate720_accum += fabsf(sensor_local.gyro_yaw) * ROBOT_CONTROL_DT;
+
+        if (g_rotate720_accum >= ROTATE720_TARGET + ROTATE720_MARGIN) {
+            g_rotate720_state = ROTATE720_DONE;
+            pid_reset(&g_yaw_angle_pid);
+            pid_reset(&g_yaw_pid);
+            /* 复位后正常 yaw 串级会锁定当前位置 */
+        }
+    }
 
     //差速转向: 串级控制 (外环角度, 内环角速度), 直接使用 target_direction
     {
@@ -580,7 +651,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
+    cmd->target_speed     = -ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
