@@ -1,7 +1,6 @@
 #include "remote_comm.h"
 
 #include "remote_protocol.h"
-#include "zf_common_interrupt.h"
 #include "zf_device_lora3a22.h"
 
 #define REMOTE_LPF_ALPHA       0.25f
@@ -51,22 +50,14 @@ static int16 remote_get_raw_joystick(const lora3a22_uart_transfer_dat_struct *fr
 
 static bool remote_read_lora_frame(lora3a22_uart_transfer_dat_struct *frame)
 {
-    uint32 interrupt_state;
-    bool has_frame = false;
-
-    if (frame == NULL) {
+    if (frame == NULL || !lora3a22_finsh_flag) {
         return false;
     }
 
-    interrupt_state = interrupt_global_disable();
-    if (lora3a22_finsh_flag) {
-        *frame = lora3a22_uart_transfer;
-        lora3a22_finsh_flag = 0u;
-        has_frame = true;
-    }
-    interrupt_global_enable(interrupt_state);
+    *frame = lora3a22_uart_transfer;
+    lora3a22_finsh_flag = 0u;
 
-    return has_frame;
+    return true;
 }
 
 static void remote_clear_runtime_state(void)

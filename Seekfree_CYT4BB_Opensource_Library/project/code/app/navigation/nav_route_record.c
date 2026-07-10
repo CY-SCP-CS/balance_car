@@ -29,7 +29,8 @@ static bool append_record_segment(Nav_Action_t action,
                                   float target_distance_m,
                                   float target_yaw_deg,
                                   float target_speed,
-                                  uint32 timeout_ms)
+                                  uint32 timeout_ms,
+                                  Nav_Region_t region)
 {
     if (g_record_state.segment_count >= NAV_RECORD_MAX_SEGMENTS) {
         g_record_state.overflow = true;
@@ -42,6 +43,7 @@ static bool append_record_segment(Nav_Action_t action,
     g_record_route[g_record_state.segment_count].target_speed = target_speed;
     g_record_route[g_record_state.segment_count].timeout_ms = timeout_ms;
     g_record_route[g_record_state.segment_count].landmark = NAV_LANDMARK_NONE;
+    g_record_route[g_record_state.segment_count].region = region;
     g_record_state.segment_count++;
 
     return true;
@@ -76,7 +78,8 @@ static bool build_recorded_route(void)
                                        delta_distance,
                                        turn_deg,
                                        NAV_RECORD_STRAIGHT_SPEED,
-                                       limit_timeout(timeout_ms))) {
+                                       limit_timeout(timeout_ms),
+                                       NAV_REGION_NORMAL)) {
                 return false;
             }
         } else if (fabsf(delta_yaw) >= NAV_RECORD_MIN_TURN_RAD) {
@@ -88,7 +91,8 @@ static bool build_recorded_route(void)
                                        0.0f,
                                        turn_deg,
                                        NAV_RECORD_TURN_SPEED,
-                                       limit_timeout(timeout_ms))) {
+                                       limit_timeout(timeout_ms),
+                                       NAV_REGION_NORMAL)) {
                 return false;
             }
         }
@@ -102,7 +106,8 @@ static bool build_recorded_route(void)
                                0.0f,
                                0.0f,
                                0.0f,
-                               0u)) {
+                               0u,
+                               NAV_REGION_NONE)) {
         return false;
     }
 

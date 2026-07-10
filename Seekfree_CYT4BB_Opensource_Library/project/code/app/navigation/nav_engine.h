@@ -14,6 +14,17 @@ typedef enum {
 } Nav_Action_t;
 
 typedef enum {
+    NAV_REGION_NONE = 0,
+    NAV_REGION_NORMAL,
+    NAV_REGION_ROTATE,
+    NAV_REGION_JUMP,
+    NAV_REGION_SPEED_BUMP,
+    NAV_REGION_SINGLE_BRIDGE,
+    NAV_REGION_UPHILL,
+    NAV_REGION_GRASS
+} Nav_Region_t;
+
+typedef enum {
     NAV_LANDMARK_NONE = 0,
     NAV_LANDMARK_CONE,
     NAV_LANDMARK_WHITE_CIRCLE,
@@ -27,6 +38,7 @@ typedef struct {
     float target_speed;
     uint32 timeout_ms;
     Nav_Landmark_t landmark;
+    Nav_Region_t region;
 } Nav_Segment_t;
 
 typedef struct {
@@ -55,7 +67,14 @@ typedef struct {
     bool safety_stop;
     uint8 segment_index;
     Nav_Action_t action;
+    Nav_Region_t region;
+    Nav_Region_t previous_region;
+    /* Set for the nav_update/nav_start cycle that changes region. */
+    bool region_entered;
+    bool region_exited;
     float segment_distance_m;
+    float region_distance_m;
+    uint32 region_elapsed_ms;
     float yaw_error_rad;
 } Nav_State_t;
 
@@ -64,6 +83,9 @@ typedef struct {
     float steering_cmd;
     bool finished;
     bool safety_stop;
+    Nav_Region_t region;
+    bool region_entered;
+    bool region_exited;
 } Nav_Output_t;
 
 void         nav_init                   (const Nav_Config_t *config);

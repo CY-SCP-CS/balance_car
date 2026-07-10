@@ -11,5 +11,5 @@ void page_nav_debug_update(const UI_Frame_t *frame)
         state != NULL ? state->segment_distance_m : 0.0f,
         state != NULL ? state->yaw_error_rad * UI_RAD_TO_DEG : 0.0f,
         state != NULL ? (float)state->segment_index : 0.0f,
-        state != NULL ? (float)state->action : 0.0f);
+        state != NULL ? (float)state->region : 0.0f);
 }
