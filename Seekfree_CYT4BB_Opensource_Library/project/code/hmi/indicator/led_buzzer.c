@@ -10,13 +10,16 @@ typedef struct {
 static const Beep_Step_t s_pat_short[]  = {{100, 1}, {0, 0}};
 static const Beep_Step_t s_pat_long[]   = {{500, 1}, {0, 0}};
 static const Beep_Step_t s_pat_double[] = {{100, 1}, {50, 0}, {100, 1}, {0, 0}};
-static const Beep_Step_t s_pat_error[]  = {{100, 1}, {50, 0}, {100, 1}, {50, 0}, {100, 1}, {0, 0}};
+static const Beep_Step_t s_pat_triple[] = {{100, 1}, {50, 0}, {100, 1}, {50, 0}, {100, 1}, {0, 0}};
+static const Beep_Step_t s_pat_double_long[] = {{500, 1}, {100, 0}, {500, 1}, {0, 0}};
 
 static const Beep_Step_t *s_patterns[] = {
     s_pat_short,
     s_pat_long,
     s_pat_double,
-    s_pat_error,
+    s_pat_triple,
+    s_pat_double_long,
+    s_pat_triple,
 };
 
 // ---- 蜂鸣器状态 ----

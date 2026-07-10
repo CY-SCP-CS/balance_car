@@ -1,5 +1,6 @@
 #include "route_remote.h"
 
+#include "../../hmi/indicator/led_buzzer.h"
 #include "../remote/remote_comm.h"
 
 /* key[2]: add record point; switch_key[2]: replay; switch_key[3]: record mode. */
@@ -76,14 +77,18 @@ void route_remote_update(const Nav_Input_t *input)
 
     if (record_switch_rising) {
         nav_route_replay_stop();
-        (void)nav_route_record_start(input);
+        if (nav_route_record_start(input)) {
+            buzzer_beep(BEEP_TRIPLE);
+        }
         remote_key_sync(remote, ROUTE_RECORD_KEY);
     }
 
     if (record_switch != 0u) {
         state = nav_route_record_get_state();
         if (state.mode != NAV_ROUTE_RECORDING) {
-            (void)nav_route_record_start(input);
+            if (nav_route_record_start(input)) {
+                buzzer_beep(BEEP_TRIPLE);
+            }
             remote_key_sync(remote, ROUTE_RECORD_KEY);
         }
 
@@ -99,7 +104,9 @@ void route_remote_update(const Nav_Input_t *input)
         state = nav_route_record_get_state();
         if (state.mode == NAV_ROUTE_RECORDING) {
             (void)nav_route_record_keypoint(input);
-            (void)nav_route_record_finish();
+            if (nav_route_record_finish()) {
+                buzzer_beep(BEEP_LONG);
+            }
         }
     }
 
@@ -110,6 +117,8 @@ void route_remote_update(const Nav_Input_t *input)
     }
 
     if (play_switch_rising && state.mode != NAV_ROUTE_RECORDING) {
-        (void)nav_route_replay_start(input);
+        if (nav_route_replay_start(input)) {
+            buzzer_beep(BEEP_DOUBLE_LONG);
+        }
     }
 }

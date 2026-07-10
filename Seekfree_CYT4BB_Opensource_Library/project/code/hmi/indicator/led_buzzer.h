@@ -14,6 +14,8 @@ typedef enum {
     BEEP_SHORT,     // 100ms 单次短鸣
     BEEP_LONG,      // 500ms 长鸣
     BEEP_DOUBLE,    // 双鸣：100ms-50ms-100ms
+    BEEP_TRIPLE,    // 三短鸣：3×(100ms on / 50ms off)
+    BEEP_DOUBLE_LONG, // 双长鸣：500ms-100ms-500ms
     BEEP_ERROR,     // 三连鸣：3×(100ms on / 50ms off)
 } Beep_Pattern_t;
 
