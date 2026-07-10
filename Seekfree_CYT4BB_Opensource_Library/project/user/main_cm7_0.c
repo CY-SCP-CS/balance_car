@@ -83,7 +83,7 @@ int main(void)
             Nav_Route_Record_State_t route_state = nav_route_record_get_state();
 
             if (route_state.mode == NAV_ROUTE_REPLAYING) {
-                Nav_Output_t nav_out = nav_update(&g_nav_input);
+                Nav_Output_t nav_out = nav_route_replay_update(&g_nav_input);
                 nav_apply_ctrl(&g_ctrl, &nav_out);
             }
         }

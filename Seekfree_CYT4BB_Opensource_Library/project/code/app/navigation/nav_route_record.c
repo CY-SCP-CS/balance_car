@@ -5,114 +5,70 @@
 #include <math.h>
 #include <stddef.h>
 
+#include "../../common/utils.h"
+
 #define NAV_RECORD_STRAIGHT_SPEED  0.18f
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_MIN_DISTANCE_M  0.06f
-#define NAV_RECORD_MIN_TURN_RAD    (12.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_STRAIGHT_TIMEOUT_BASE_MS  2000u
-#define NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS 7000u
-#define NAV_RECORD_TURN_TIMEOUT_BASE_MS      1500u
-#define NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS   35u
 #define NAV_RECORD_TIMEOUT_MAX_MS            15000u
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
-static Nav_Segment_t g_record_route[NAV_RECORD_MAX_SEGMENTS];
 static Nav_Route_Record_State_t g_record_state;
+static float g_replay_start_distance;
+static float g_replay_start_yaw;
+static uint32 g_replay_start_time;
 
-static uint32 limit_timeout(uint32 timeout_ms)
+static float keypoint_distance_from_start(uint8 index)
 {
-    return timeout_ms > NAV_RECORD_TIMEOUT_MAX_MS ?
-        NAV_RECORD_TIMEOUT_MAX_MS : timeout_ms;
-}
+    float distance;
 
-static bool append_record_segment(Nav_Action_t action,
-                                  float target_distance_m,
-                                  float target_yaw_deg,
-                                  float target_speed,
-                                  uint32 timeout_ms,
-                                  Nav_Region_t region)
-{
-    if (g_record_state.segment_count >= NAV_RECORD_MAX_SEGMENTS) {
-        g_record_state.overflow = true;
-        return false;
+    if (g_record_state.keypoint_count == 0u) {
+        return 0.0f;
     }
 
-    g_record_route[g_record_state.segment_count].action = action;
-    g_record_route[g_record_state.segment_count].target_distance_m = target_distance_m;
-    g_record_route[g_record_state.segment_count].target_yaw_deg = target_yaw_deg;
-    g_record_route[g_record_state.segment_count].target_speed = target_speed;
-    g_record_route[g_record_state.segment_count].timeout_ms = timeout_ms;
-    g_record_route[g_record_state.segment_count].landmark = NAV_LANDMARK_NONE;
-    g_record_route[g_record_state.segment_count].region = region;
-    g_record_state.segment_count++;
-
-    return true;
-}
-
-static bool build_recorded_route(void)
-{
-    g_record_state.segment_count = 0u;
-    g_record_state.route_ready = false;
-
-    if (g_record_state.keypoint_count < 2u) {
-        return false;
+    if (index >= g_record_state.keypoint_count) {
+        index = (uint8)(g_record_state.keypoint_count - 1u);
     }
 
-    for (uint8 i = 1u; i < g_record_state.keypoint_count; i++) {
+    distance = g_record_keypoints[index].distance_m -
+               g_record_keypoints[0].distance_m;
+
+    return distance > 0.0f ? distance : 0.0f;
+}
+
+static float keypoint_yaw_delta_from_start(uint8 index)
+{
+    float yaw_delta = 0.0f;
+
+    if (g_record_state.keypoint_count == 0u) {
+        return 0.0f;
+    }
+
+    if (index >= g_record_state.keypoint_count) {
+        index = (uint8)(g_record_state.keypoint_count - 1u);
+    }
+
+    for (uint8 i = 1u; i <= index; i++) {
         const Nav_Keypoint_t *prev = &g_record_keypoints[i - 1u];
         const Nav_Keypoint_t *cur = &g_record_keypoints[i];
-        float delta_distance = cur->distance_m - prev->distance_m;
-        float delta_yaw = nav_wrap_pi(cur->yaw_rad - prev->yaw_rad);
-
-        if (delta_distance < 0.0f) {
-            delta_distance = 0.0f;
-        }
-
-        if (delta_distance >= NAV_RECORD_MIN_DISTANCE_M) {
-            float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
-            uint32 timeout_ms = NAV_RECORD_STRAIGHT_TIMEOUT_BASE_MS +
-                (uint32)(delta_distance * (float)NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS) +
-                (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
-
-            if (!append_record_segment(NAV_ACTION_GO_STRAIGHT,
-                                       delta_distance,
-                                       turn_deg,
-                                       NAV_RECORD_STRAIGHT_SPEED,
-                                       limit_timeout(timeout_ms),
-                                       NAV_REGION_NORMAL)) {
-                return false;
-            }
-        } else if (fabsf(delta_yaw) >= NAV_RECORD_MIN_TURN_RAD) {
-            float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
-            uint32 timeout_ms = NAV_RECORD_TURN_TIMEOUT_BASE_MS +
-                (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
-
-            if (!append_record_segment(NAV_ACTION_TURN,
-                                       0.0f,
-                                       turn_deg,
-                                       NAV_RECORD_TURN_SPEED,
-                                       limit_timeout(timeout_ms),
-                                       NAV_REGION_NORMAL)) {
-                return false;
-            }
-        }
+        yaw_delta += nav_wrap_pi(cur->yaw_rad - prev->yaw_rad);
     }
 
-    if (g_record_state.segment_count == 0u) {
-        return false;
+    return yaw_delta;
+}
+
+static uint32 keypoint_elapsed_from_start(uint8 index)
+{
+    if (g_record_state.keypoint_count == 0u) {
+        return 0u;
     }
 
-    if (!append_record_segment(NAV_ACTION_STOP,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               0u,
-                               NAV_REGION_NONE)) {
-        return false;
+    if (index >= g_record_state.keypoint_count) {
+        index = (uint8)(g_record_state.keypoint_count - 1u);
     }
 
-    g_record_state.route_ready = true;
-    return true;
+    return (uint32)(g_record_keypoints[index].time_ms -
+                    g_record_keypoints[0].time_ms);
 }
 
 void nav_route_record_notify_navigation_stopped(bool finished,
@@ -134,7 +90,7 @@ bool nav_route_record_start(const Nav_Input_t *input)
     nav_stop();
     g_record_state.mode = NAV_ROUTE_RECORDING;
     g_record_state.keypoint_count = 1u;
-    g_record_state.segment_count = 0u;
+    g_record_state.replay_index = 0u;
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
 
@@ -167,19 +123,25 @@ bool nav_route_record_keypoint(const Nav_Input_t *input)
 
 bool nav_route_record_finish(void)
 {
+    bool saved;
+
     if (g_record_state.mode != NAV_ROUTE_RECORDING) {
         return false;
     }
 
-    if (!build_recorded_route()) {
+    if (g_record_state.keypoint_count < 2u) {
         g_record_state.mode = NAV_ROUTE_IDLE;
         g_record_state.route_ready = false;
         return false;
     }
 
+    saved = nav_route_storage_save(g_record_keypoints,
+                                   g_record_state.keypoint_count);
+
     g_record_state.mode = NAV_ROUTE_READY;
-    (void)nav_route_storage_save(g_record_route, g_record_state.segment_count);
-    return true;
+    g_record_state.route_ready = true;
+    g_record_state.replay_index = 0u;
+    return saved;
 }
 
 void nav_route_record_reset(void)
@@ -187,35 +149,42 @@ void nav_route_record_reset(void)
     nav_stop();
     g_record_state.mode = NAV_ROUTE_IDLE;
     g_record_state.keypoint_count = 0u;
-    g_record_state.segment_count = 0u;
+    g_record_state.replay_index = 0u;
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
 }
 
-static void set_loaded_route_ready(uint8 route_len)
+static bool set_loaded_keypoints_ready(uint8 keypoint_count)
 {
     nav_stop();
-    g_record_state.mode = NAV_ROUTE_READY;
-    g_record_state.keypoint_count = 0u;
-    g_record_state.segment_count = route_len;
-    g_record_state.route_ready = true;
+    g_record_state.mode = NAV_ROUTE_IDLE;
+    g_record_state.keypoint_count = keypoint_count;
+    g_record_state.replay_index = 0u;
+    g_record_state.route_ready = false;
     g_record_state.overflow = false;
+
+    if (g_record_state.keypoint_count < 2u) {
+        g_record_state.keypoint_count = 0u;
+        return false;
+    }
+
+    g_record_state.mode = NAV_ROUTE_READY;
+    g_record_state.route_ready = true;
+    return true;
 }
 
 bool nav_route_record_load_saved_history(uint8 history_index)
 {
-    uint8 route_len = 0u;
+    uint8 keypoint_count = 0u;
 
-    if (!nav_route_storage_load_history(g_record_route,
-                                        NAV_RECORD_MAX_SEGMENTS,
-                                        &route_len,
+    if (!nav_route_storage_load_history(g_record_keypoints,
+                                        NAV_RECORD_MAX_KEYPOINTS,
+                                        &keypoint_count,
                                         history_index)) {
         return false;
     }
 
-    set_loaded_route_ready(route_len);
-
-    return true;
+    return set_loaded_keypoints_ready(keypoint_count);
 }
 
 bool nav_route_record_load_saved(void)
@@ -231,15 +200,106 @@ bool nav_route_record_load_previous_saved(void)
 bool nav_route_replay_start(const Nav_Input_t *input)
 {
     if (input == NULL || !g_record_state.route_ready ||
-        g_record_state.segment_count == 0u) {
+        g_record_state.keypoint_count < 2u) {
         return false;
     }
 
-    nav_set_route(g_record_route, g_record_state.segment_count);
+    nav_stop();
     g_record_state.mode = NAV_ROUTE_REPLAYING;
-    nav_start(input);
+    g_record_state.replay_index = 1u;
+    g_replay_start_distance = input->distance_m;
+    g_replay_start_yaw = input->yaw_rad;
+    g_replay_start_time = input->time_ms;
 
     return true;
+}
+
+Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
+{
+    Nav_Output_t out = {
+        0.0f, 0.0f, false, false, NAV_REGION_NONE, false, false
+    };
+    Nav_Config_t cfg;
+    float traveled;
+
+    if (input == NULL ||
+        g_record_state.mode != NAV_ROUTE_REPLAYING ||
+        !g_record_state.route_ready ||
+        g_record_state.keypoint_count < 2u) {
+        return out;
+    }
+
+    if (input->obstacle_close) {
+        g_record_state.mode = NAV_ROUTE_READY;
+        g_record_state.replay_index = 0u;
+        out.safety_stop = true;
+        return out;
+    }
+
+    cfg = nav_get_config();
+    traveled = input->distance_m - g_replay_start_distance;
+    if (traveled < 0.0f) {
+        traveled = 0.0f;
+    }
+
+    while (g_record_state.replay_index < g_record_state.keypoint_count) {
+        uint8 prev_index = (uint8)(g_record_state.replay_index - 1u);
+        uint8 cur_index = g_record_state.replay_index;
+        float prev_distance = keypoint_distance_from_start(prev_index);
+        float target_distance = keypoint_distance_from_start(cur_index);
+        float segment_distance = target_distance - prev_distance;
+        float prev_yaw_delta = keypoint_yaw_delta_from_start(prev_index);
+        float target_yaw_delta = keypoint_yaw_delta_from_start(cur_index);
+        float segment_yaw_delta = target_yaw_delta - prev_yaw_delta;
+        float progress = 1.0f;
+        float target_yaw;
+        float yaw_error;
+        bool timed_out;
+        bool arrived;
+        uint32 target_elapsed = keypoint_elapsed_from_start(cur_index);
+        uint32 replay_elapsed = (uint32)(input->time_ms - g_replay_start_time);
+
+        if (segment_distance > 0.0f) {
+            progress = clamp((traveled - prev_distance) / segment_distance,
+                             0.0f,
+                             1.0f);
+        }
+
+        target_yaw = g_replay_start_yaw +
+                     prev_yaw_delta +
+                     segment_yaw_delta * progress;
+        yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
+        timed_out = target_elapsed > 0u &&
+                    replay_elapsed > target_elapsed &&
+                    (uint32)(replay_elapsed - target_elapsed) >
+                    NAV_RECORD_TIMEOUT_MAX_MS;
+
+        if (segment_distance >= NAV_RECORD_MIN_DISTANCE_M) {
+            out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
+            out.steering_cmd = cfg.yaw_kp * yaw_error;
+            arrived = traveled >= target_distance - cfg.distance_tolerance_m;
+        } else {
+            out.velocity_cmd = NAV_RECORD_TURN_SPEED;
+            out.steering_cmd = cfg.turn_kp * yaw_error;
+            arrived = fabsf(segment_yaw_delta) <= cfg.yaw_tolerance_rad ||
+                      fabsf(yaw_error) <= cfg.yaw_tolerance_rad;
+        }
+
+        if (!arrived && !timed_out) {
+            out.region = NAV_REGION_NORMAL;
+            out.steering_cmd = clamp(out.steering_cmd,
+                                     -cfg.steering_limit,
+                                     cfg.steering_limit);
+            return out;
+        }
+
+        g_record_state.replay_index++;
+    }
+
+    g_record_state.mode = NAV_ROUTE_READY;
+    g_record_state.replay_index = 0u;
+    out.finished = true;
+    return out;
 }
 
 void nav_route_replay_stop(void)
@@ -247,18 +307,10 @@ void nav_route_replay_stop(void)
     nav_stop();
     g_record_state.mode = g_record_state.route_ready ?
         NAV_ROUTE_READY : NAV_ROUTE_IDLE;
+    g_record_state.replay_index = 0u;
 }
 
 Nav_Route_Record_State_t nav_route_record_get_state(void)
 {
     return g_record_state;
-}
-
-const Nav_Segment_t *nav_route_recorded_route(uint8 *route_len)
-{
-    if (route_len != NULL) {
-        *route_len = g_record_state.segment_count;
-    }
-
-    return g_record_route;
 }
