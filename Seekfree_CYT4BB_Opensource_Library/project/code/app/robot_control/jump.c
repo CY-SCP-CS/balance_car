@@ -329,7 +329,7 @@ static void run_cushion(const Sensor_data_t *sensor,
 
         /* 切回正常控制前, 复位腿/偏航 PID, 清除指令.
          * 注意: 不复位 balance PID — CUSHION 阶段 balance 一直在跑,
-         * 复位会导致正常控制从零开始, 落地后必倒. */
+         * 复位会导致正常控制从零开始, 落地必倒. */
         robot_control_reset_leg_speed_pid();
         robot_control_reset_leg_pid();
         pid_reset(&g_yaw_angle_pid);
