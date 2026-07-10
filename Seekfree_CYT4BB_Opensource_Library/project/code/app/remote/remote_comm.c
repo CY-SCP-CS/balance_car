@@ -1,13 +1,16 @@
 #include "remote_comm.h"
 
 #include "remote_protocol.h"
+#include "../../hmi/indicator/led_buzzer.h"
 #include "zf_device_lora3a22.h"
 
 #define REMOTE_LPF_ALPHA       0.25f
+#define REMOTE_BEEP_KEY        2u
 
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
 static float g_remote_filtered_joystick[4];
+static uint8 g_remote_beep_key_prev;
 
 static float remote_absf(float value)
 {
@@ -68,12 +71,25 @@ static void remote_clear_runtime_state(void)
         g_remote_state.key[i] = 0u;
         g_remote_state.switch_key[i] = 0u;
     }
+    g_remote_beep_key_prev = 0u;
+}
+
+static void remote_update_key_buzzer(void)
+{
+    uint8 key_now = g_remote_state.key[REMOTE_BEEP_KEY] != 0u ? 1u : 0u;
+
+    if (key_now != 0u && g_remote_beep_key_prev == 0u) {
+        buzzer_beep(BEEP_SHORT);
+    }
+
+    g_remote_beep_key_prev = key_now;
 }
 
 void remote_comm_init(void)
 {
     memset(&g_remote_state, 0, sizeof(g_remote_state));
     memset(g_remote_filtered_joystick, 0, sizeof(g_remote_filtered_joystick));
+    g_remote_beep_key_prev = 0u;
     g_remote_timeout_ms = REMOTE_LORA_TIMEOUT_MS;
     lora3a22_init();
 }
@@ -101,6 +117,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
 
         g_remote_state.connected = true;
         g_remote_state.frame_updated = true;
+        remote_update_key_buzzer();
         g_remote_timeout_ms = 0u;
     } else if (g_remote_timeout_ms < REMOTE_LORA_TIMEOUT_MS) {
         g_remote_timeout_ms++;
