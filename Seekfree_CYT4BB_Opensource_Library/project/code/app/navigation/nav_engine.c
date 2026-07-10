@@ -1,30 +1,22 @@
-#include "nav_engine.h"
+#include "nav_internal.h"
+#include "nav_route_record.h"
 
 #include <math.h>
 #include <stddef.h>
 
 #include "../../common/utils.h"
-#include "../robot_control/robot_control.h"
 
-#define NAV_PI                  3.14159265f
-#define NAV_DEG_TO_RAD          (NAV_PI / 180.0f)
-#define NAV_RAD_TO_DEG          (180.0f / NAV_PI)
 #define NAV_DEFAULT_ROUTE_LEN   4u
-#define NAV_RECORD_STRAIGHT_SPEED  0.18f
-#define NAV_RECORD_TURN_SPEED      0.0f
-#define NAV_RECORD_MIN_DISTANCE_M  0.06f
-#define NAV_RECORD_MIN_TURN_RAD    (12.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_STRAIGHT_TIMEOUT_BASE_MS  2000u
-#define NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS 7000u
-#define NAV_RECORD_TURN_TIMEOUT_BASE_MS      1500u
-#define NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS   35u
-#define NAV_RECORD_TIMEOUT_MAX_MS            15000u
 
 static const Nav_Segment_t g_default_route[NAV_DEFAULT_ROUTE_LEN] = {
-    { NAV_ACTION_GO_STRAIGHT,   3.0f,  0.0f, 0.25f, 8000u, NAV_LANDMARK_NONE },
-    { NAV_ACTION_WAIT_LANDMARK, 1.5f,  0.0f, 0.18f, 5000u, NAV_LANDMARK_WHITE_CIRCLE },
-    { NAV_ACTION_TURN,          0.0f, 35.0f, 0.0f,  4000u, NAV_LANDMARK_NONE },
-    { NAV_ACTION_STOP,          0.0f,  0.0f, 0.0f,     0u, NAV_LANDMARK_NONE }
+    { NAV_ACTION_GO_STRAIGHT,   3.0f,  0.0f, 0.25f,
+      8000u, NAV_LANDMARK_NONE, NAV_REGION_NORMAL },
+    { NAV_ACTION_WAIT_LANDMARK, 1.5f,  0.0f, 0.18f,
+      5000u, NAV_LANDMARK_WHITE_CIRCLE, NAV_REGION_NORMAL },
+    { NAV_ACTION_TURN,          0.0f, 35.0f, 0.0f,
+      4000u, NAV_LANDMARK_NONE, NAV_REGION_ROTATE },
+    { NAV_ACTION_STOP,          0.0f,  0.0f, 0.0f,
+      0u,    NAV_LANDMARK_NONE, NAV_REGION_NONE }
 };
 
 static Nav_Config_t g_cfg = {
@@ -43,28 +35,8 @@ static Nav_State_t g_state;
 static float g_segment_start_distance;
 static float g_segment_start_yaw;
 static uint32 g_segment_start_time;
-static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
-static Nav_Segment_t g_record_route[NAV_RECORD_MAX_SEGMENTS];
-static Nav_Route_Record_State_t g_record_state;
-
-static float wrap_pi(float angle)
-{
-    while (angle > NAV_PI) {
-        angle -= 2.0f * NAV_PI;
-    }
-
-    while (angle < -NAV_PI) {
-        angle += 2.0f * NAV_PI;
-    }
-
-    return angle;
-}
-
-static uint32 limit_timeout(uint32 timeout_ms)
-{
-    return timeout_ms > NAV_RECORD_TIMEOUT_MAX_MS ?
-        NAV_RECORD_TIMEOUT_MAX_MS : timeout_ms;
-}
+static float g_region_start_distance;
+static uint32 g_region_start_time;
 
 static float segment_progress(float segment_distance, float target_distance_m)
 {
@@ -73,91 +45,6 @@ static float segment_progress(float segment_distance, float target_distance_m)
     }
 
     return clamp(segment_distance / target_distance_m, 0.0f, 1.0f);
-}
-
-static bool append_record_segment(Nav_Action_t action,
-                                  float target_distance_m,
-                                  float target_yaw_deg,
-                                  float target_speed,
-                                  uint32 timeout_ms)
-{
-    if (g_record_state.segment_count >= NAV_RECORD_MAX_SEGMENTS) {
-        g_record_state.overflow = true;
-        return false;
-    }
-
-    g_record_route[g_record_state.segment_count].action = action;
-    g_record_route[g_record_state.segment_count].target_distance_m = target_distance_m;
-    g_record_route[g_record_state.segment_count].target_yaw_deg = target_yaw_deg;
-    g_record_route[g_record_state.segment_count].target_speed = target_speed;
-    g_record_route[g_record_state.segment_count].timeout_ms = timeout_ms;
-    g_record_route[g_record_state.segment_count].landmark = NAV_LANDMARK_NONE;
-    g_record_state.segment_count++;
-
-    return true;
-}
-
-static bool build_recorded_route(void)
-{
-    g_record_state.segment_count = 0u;
-    g_record_state.route_ready = false;
-
-    if (g_record_state.keypoint_count < 2u) {
-        return false;
-    }
-
-    for (uint8 i = 1u; i < g_record_state.keypoint_count; i++) {
-        const Nav_Keypoint_t *prev = &g_record_keypoints[i - 1u];
-        const Nav_Keypoint_t *cur = &g_record_keypoints[i];
-        float delta_distance = cur->distance_m - prev->distance_m;
-        float delta_yaw = wrap_pi(cur->yaw_rad - prev->yaw_rad);
-
-        if (delta_distance < 0.0f) {
-            delta_distance = 0.0f;
-        }
-
-        if (delta_distance >= NAV_RECORD_MIN_DISTANCE_M) {
-            float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
-            uint32 timeout_ms = NAV_RECORD_STRAIGHT_TIMEOUT_BASE_MS +
-                (uint32)(delta_distance * (float)NAV_RECORD_STRAIGHT_TIMEOUT_PER_M_MS) +
-                (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
-
-            if (!append_record_segment(NAV_ACTION_GO_STRAIGHT,
-                                       delta_distance,
-                                       turn_deg,
-                                       NAV_RECORD_STRAIGHT_SPEED,
-                                       limit_timeout(timeout_ms))) {
-                return false;
-            }
-        } else if (fabsf(delta_yaw) >= NAV_RECORD_MIN_TURN_RAD) {
-            float turn_deg = delta_yaw * NAV_RAD_TO_DEG;
-            uint32 timeout_ms = NAV_RECORD_TURN_TIMEOUT_BASE_MS +
-                (uint32)(fabsf(turn_deg) * (float)NAV_RECORD_TURN_TIMEOUT_PER_DEG_MS);
-
-            if (!append_record_segment(NAV_ACTION_TURN,
-                                       0.0f,
-                                       turn_deg,
-                                       NAV_RECORD_TURN_SPEED,
-                                       limit_timeout(timeout_ms))) {
-                return false;
-            }
-        }
-    }
-
-    if (g_record_state.segment_count == 0u) {
-        return false;
-    }
-
-    if (!append_record_segment(NAV_ACTION_STOP,
-                               0.0f,
-                               0.0f,
-                               0.0f,
-                               0u)) {
-        return false;
-    }
-
-    g_record_state.route_ready = true;
-    return true;
 }
 
 static bool timeout_elapsed(const Nav_Input_t *input, const Nav_Segment_t *seg)
@@ -176,6 +63,71 @@ static bool landmark_seen(const Nav_Input_t *input, Nav_Landmark_t landmark)
            input->landmark_confidence >= g_cfg.landmark_min_confidence;
 }
 
+static void clear_region_transition(void)
+{
+    g_state.previous_region = g_state.region;
+    g_state.region_entered = false;
+    g_state.region_exited = false;
+}
+
+static void fill_output_status(Nav_Output_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+
+    out->finished = g_state.finished;
+    out->safety_stop = g_state.safety_stop;
+    out->region = g_state.region;
+    out->region_entered = g_state.region_entered;
+    out->region_exited = g_state.region_exited;
+}
+
+static void update_region_for_segment(const Nav_Segment_t *seg,
+                                      const Nav_Input_t *input)
+{
+    Nav_Region_t old_region;
+    Nav_Region_t new_region;
+
+    if (seg == NULL || input == NULL) {
+        return;
+    }
+
+    old_region = g_state.region;
+    new_region = seg->region;
+
+    if (new_region == old_region) {
+        return;
+    }
+
+    g_state.previous_region = old_region;
+    g_state.region = new_region;
+    g_state.region_entered = new_region != NAV_REGION_NONE;
+    g_state.region_exited = old_region != NAV_REGION_NONE;
+    g_state.region_distance_m = 0.0f;
+    g_state.region_elapsed_ms = 0u;
+
+    g_region_start_distance = input->distance_m;
+    g_region_start_time = input->time_ms;
+}
+
+static void leave_current_region(const Nav_Input_t *input)
+{
+    if (input == NULL || g_state.region == NAV_REGION_NONE) {
+        return;
+    }
+
+    g_state.previous_region = g_state.region;
+    g_state.region = NAV_REGION_NONE;
+    g_state.region_entered = false;
+    g_state.region_exited = true;
+    g_state.region_distance_m = 0.0f;
+    g_state.region_elapsed_ms = 0u;
+
+    g_region_start_distance = input->distance_m;
+    g_region_start_time = input->time_ms;
+}
+
 static void enter_segment(uint8 index, const Nav_Input_t *input)
 {
     g_state.segment_index = index;
@@ -186,6 +138,8 @@ static void enter_segment(uint8 index, const Nav_Input_t *input)
     g_segment_start_distance = input->distance_m;
     g_segment_start_yaw = input->yaw_rad;
     g_segment_start_time = input->time_ms;
+
+    update_region_for_segment(&g_route[index], input);
 }
 
 static void advance_segment(const Nav_Input_t *input)
@@ -193,6 +147,7 @@ static void advance_segment(const Nav_Input_t *input)
     uint8 next = (uint8)(g_state.segment_index + 1u);
 
     if (next >= g_route_len) {
+        leave_current_region(input);
         g_state.active = false;
         g_state.finished = true;
         g_state.action = NAV_ACTION_STOP;
@@ -212,6 +167,7 @@ void nav_init(const Nav_Config_t *config)
     g_route_len = NAV_DEFAULT_ROUTE_LEN;
     nav_stop();
     nav_route_record_reset();
+    (void)nav_route_record_load_saved();
 }
 
 void nav_set_route(const Nav_Segment_t *route, uint8 route_len)
@@ -236,6 +192,14 @@ void nav_start(const Nav_Input_t *input)
     g_state.active = true;
     g_state.finished = false;
     g_state.safety_stop = false;
+    g_state.region = NAV_REGION_NONE;
+    g_state.previous_region = NAV_REGION_NONE;
+    g_state.region_entered = false;
+    g_state.region_exited = false;
+    g_state.region_distance_m = 0.0f;
+    g_state.region_elapsed_ms = 0u;
+    g_region_start_distance = input->distance_m;
+    g_region_start_time = input->time_ms;
     enter_segment(0u, input);
 }
 
@@ -246,40 +210,49 @@ void nav_stop(void)
     g_state.safety_stop = false;
     g_state.segment_index = 0u;
     g_state.action = NAV_ACTION_IDLE;
+    g_state.region = NAV_REGION_NONE;
+    g_state.previous_region = NAV_REGION_NONE;
+    g_state.region_entered = false;
+    g_state.region_exited = false;
     g_state.segment_distance_m = 0.0f;
+    g_state.region_distance_m = 0.0f;
+    g_state.region_elapsed_ms = 0u;
     g_state.yaw_error_rad = 0.0f;
+    g_region_start_distance = 0.0f;
+    g_region_start_time = 0u;
 }
 
 Nav_Output_t nav_update(const Nav_Input_t *input)
 {
-    Nav_Output_t out = { 0.0f, 0.0f, g_state.finished, g_state.safety_stop };
+    Nav_Output_t out = {
+        0.0f, 0.0f, false, false, NAV_REGION_NONE, false, false
+    };
+
+    fill_output_status(&out);
 
     if (input == NULL) {
         return out;
     }
+
+    clear_region_transition();
 
     if (!g_state.active && !g_state.finished) {
         nav_start(input);
     }
 
     if (!g_state.active || g_state.finished) {
-        out.finished = g_state.finished;
-        if (g_record_state.mode == NAV_ROUTE_REPLAYING &&
-            (out.finished || out.safety_stop)) {
-            g_record_state.mode = g_record_state.route_ready ?
-                NAV_ROUTE_READY : NAV_ROUTE_IDLE;
-        }
+        fill_output_status(&out);
+        nav_route_record_notify_navigation_stopped(out.finished,
+                                                   out.safety_stop);
         return out;
     }
 
     if (input->obstacle_close) {
         g_state.active = false;
         g_state.safety_stop = true;
-        out.safety_stop = true;
-        if (g_record_state.mode == NAV_ROUTE_REPLAYING) {
-            g_record_state.mode = g_record_state.route_ready ?
-                NAV_ROUTE_READY : NAV_ROUTE_IDLE;
-        }
+        fill_output_status(&out);
+        nav_route_record_notify_navigation_stopped(out.finished,
+                                                   out.safety_stop);
         return out;
     }
 
@@ -287,17 +260,19 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
     float segment_distance = input->distance_m - g_segment_start_distance;
     float target_yaw_rad = seg->target_yaw_deg * NAV_DEG_TO_RAD;
     float final_yaw = g_segment_start_yaw + target_yaw_rad;
-    float yaw_error = wrap_pi(final_yaw - input->yaw_rad);
+    float yaw_error = nav_wrap_pi(final_yaw - input->yaw_rad);
     bool timed_out = timeout_elapsed(input, seg);
 
     g_state.segment_distance_m = segment_distance;
+    g_state.region_distance_m = input->distance_m - g_region_start_distance;
+    g_state.region_elapsed_ms = (uint32)(input->time_ms - g_region_start_time);
 
     switch (seg->action) {
     case NAV_ACTION_GO_STRAIGHT:
     {
         float progress = segment_progress(segment_distance, seg->target_distance_m);
         float hold_yaw = g_segment_start_yaw + target_yaw_rad * progress;
-        yaw_error = wrap_pi(hold_yaw - input->yaw_rad);
+        yaw_error = nav_wrap_pi(hold_yaw - input->yaw_rad);
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
 
@@ -337,6 +312,7 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
 
     case NAV_ACTION_STOP:
     default:
+        leave_current_region(input);
         g_state.active = false;
         g_state.finished = true;
         break;
@@ -346,13 +322,9 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
     out.steering_cmd = clamp(out.steering_cmd,
                              -g_cfg.steering_limit,
                              g_cfg.steering_limit);
-    out.finished = g_state.finished;
-    out.safety_stop = g_state.safety_stop;
-    if (g_record_state.mode == NAV_ROUTE_REPLAYING &&
-        (out.finished || out.safety_stop)) {
-        g_record_state.mode = g_record_state.route_ready ?
-            NAV_ROUTE_READY : NAV_ROUTE_IDLE;
-    }
+    fill_output_status(&out);
+    nav_route_record_notify_navigation_stopped(out.finished,
+                                               out.safety_stop);
 
     return out;
 }
@@ -360,136 +332,6 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
 Nav_State_t nav_get_state(void)
 {
     return g_state;
-}
-
-void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
-{
-    static float yaw_rad = 0.0f;
-
-    if (input == NULL || ctrl == NULL) {
-        return;
-    }
-
-    yaw_rad = wrap_pi(yaw_rad + ctrl->gyro_yaw_rate * NAV_LOOP_DT_S);
-
-    input->yaw_rad = yaw_rad;
-    input->time_ms += NAV_LOOP_DT_MS;
-
-    input->distance_m = robot_control_get_distance();
-
-    /* landmark / obstacle fields are populated by vision_feed_nav_input()
-       which the caller must invoke before calling nav_input_update_from_ctrl(). */
-}
-
-void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)
-{
-    if (ctrl == NULL || nav == NULL) {
-        return;
-    }
-
-    ctrl->velocity_cmd = nav->velocity_cmd;
-    ctrl->steering_cmd = nav->steering_cmd;
-}
-
-bool nav_route_record_start(const Nav_Input_t *input)
-{
-    if (input == NULL) {
-        return false;
-    }
-
-    nav_stop();
-    g_record_state.mode = NAV_ROUTE_RECORDING;
-    g_record_state.keypoint_count = 1u;
-    g_record_state.segment_count = 0u;
-    g_record_state.route_ready = false;
-    g_record_state.overflow = false;
-
-    g_record_keypoints[0].distance_m = input->distance_m;
-    g_record_keypoints[0].yaw_rad = input->yaw_rad;
-    g_record_keypoints[0].time_ms = input->time_ms;
-
-    return true;
-}
-
-bool nav_route_record_keypoint(const Nav_Input_t *input)
-{
-    if (input == NULL || g_record_state.mode != NAV_ROUTE_RECORDING) {
-        return false;
-    }
-
-    if (g_record_state.keypoint_count >= NAV_RECORD_MAX_KEYPOINTS) {
-        g_record_state.overflow = true;
-        return false;
-    }
-
-    uint8 index = g_record_state.keypoint_count;
-    g_record_keypoints[index].distance_m = input->distance_m;
-    g_record_keypoints[index].yaw_rad = input->yaw_rad;
-    g_record_keypoints[index].time_ms = input->time_ms;
-    g_record_state.keypoint_count++;
-
-    return true;
-}
-
-bool nav_route_record_finish(void)
-{
-    if (g_record_state.mode != NAV_ROUTE_RECORDING) {
-        return false;
-    }
-
-    if (!build_recorded_route()) {
-        g_record_state.mode = NAV_ROUTE_IDLE;
-        g_record_state.route_ready = false;
-        return false;
-    }
-
-    g_record_state.mode = NAV_ROUTE_READY;
-    return true;
-}
-
-void nav_route_record_reset(void)
-{
-    nav_stop();
-    g_record_state.mode = NAV_ROUTE_IDLE;
-    g_record_state.keypoint_count = 0u;
-    g_record_state.segment_count = 0u;
-    g_record_state.route_ready = false;
-    g_record_state.overflow = false;
-}
-
-bool nav_route_replay_start(const Nav_Input_t *input)
-{
-    if (input == NULL || !g_record_state.route_ready ||
-        g_record_state.segment_count == 0u) {
-        return false;
-    }
-
-    nav_set_route(g_record_route, g_record_state.segment_count);
-    g_record_state.mode = NAV_ROUTE_REPLAYING;
-    nav_start(input);
-
-    return true;
-}
-
-void nav_route_replay_stop(void)
-{
-    nav_stop();
-    g_record_state.mode = g_record_state.route_ready ?
-        NAV_ROUTE_READY : NAV_ROUTE_IDLE;
-}
-
-Nav_Route_Record_State_t nav_route_record_get_state(void)
-{
-    return g_record_state;
-}
-
-const Nav_Segment_t *nav_route_recorded_route(uint8 *route_len)
-{
-    if (route_len != NULL) {
-        *route_len = g_record_state.segment_count;
-    }
-
-    return g_record_route;
 }
 
 Nav_Config_t nav_get_config(void)

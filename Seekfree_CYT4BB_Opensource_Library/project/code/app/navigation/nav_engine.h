@@ -5,11 +5,6 @@
 
 #include "../../common/types.h"
 
-#define NAV_LOOP_DT_S   0.001f
-#define NAV_LOOP_DT_MS  1u
-#define NAV_RECORD_MAX_KEYPOINTS  16u
-#define NAV_RECORD_MAX_SEGMENTS   32u
-
 typedef enum {
     NAV_ACTION_IDLE = 0,
     NAV_ACTION_GO_STRAIGHT,
@@ -17,6 +12,17 @@ typedef enum {
     NAV_ACTION_WAIT_LANDMARK,
     NAV_ACTION_STOP
 } Nav_Action_t;
+
+typedef enum {
+    NAV_REGION_NONE = 0,
+    NAV_REGION_NORMAL,
+    NAV_REGION_ROTATE,
+    NAV_REGION_JUMP,
+    NAV_REGION_SPEED_BUMP,
+    NAV_REGION_SINGLE_BRIDGE,
+    NAV_REGION_UPHILL,
+    NAV_REGION_GRASS
+} Nav_Region_t;
 
 typedef enum {
     NAV_LANDMARK_NONE = 0,
@@ -32,6 +38,7 @@ typedef struct {
     float target_speed;
     uint32 timeout_ms;
     Nav_Landmark_t landmark;
+    Nav_Region_t region;
 } Nav_Segment_t;
 
 typedef struct {
@@ -60,7 +67,14 @@ typedef struct {
     bool safety_stop;
     uint8 segment_index;
     Nav_Action_t action;
+    Nav_Region_t region;
+    Nav_Region_t previous_region;
+    /* Set for the nav_update/nav_start cycle that changes region. */
+    bool region_entered;
+    bool region_exited;
     float segment_distance_m;
+    float region_distance_m;
+    uint32 region_elapsed_ms;
     float yaw_error_rad;
 } Nav_State_t;
 
@@ -69,47 +83,19 @@ typedef struct {
     float steering_cmd;
     bool finished;
     bool safety_stop;
+    Nav_Region_t region;
+    bool region_entered;
+    bool region_exited;
 } Nav_Output_t;
-
-typedef enum {
-    NAV_ROUTE_IDLE = 0,
-    NAV_ROUTE_RECORDING,
-    NAV_ROUTE_READY,
-    NAV_ROUTE_REPLAYING,
-} Nav_Route_Mode_t;
-
-typedef struct {
-    float distance_m;
-    float yaw_rad;
-    uint32 time_ms;
-} Nav_Keypoint_t;
-
-typedef struct {
-    Nav_Route_Mode_t mode;
-    uint8 keypoint_count;
-    uint8 segment_count;
-    bool route_ready;
-    bool overflow;
-} Nav_Route_Record_State_t;
 
 void         nav_init                   (const Nav_Config_t *config);
 void         nav_set_route              (const Nav_Segment_t *route, uint8 route_len);
 void         nav_start                  (const Nav_Input_t *input);
 void         nav_stop                   (void);
-void         nav_input_update_from_ctrl (Nav_Input_t *input, const Ctrl_Input_t *ctrl);
 Nav_Output_t nav_update                 (const Nav_Input_t *input);
 Nav_State_t  nav_get_state              (void);
-void         nav_apply_ctrl             (Ctrl_Input_t *ctrl, const Nav_Output_t *nav);
 Nav_Config_t  nav_get_config            (void);
 void          nav_set_config            (const Nav_Config_t *config);
 Nav_Config_t *nav_config                (void);
-bool          nav_route_record_start    (const Nav_Input_t *input);
-bool          nav_route_record_keypoint (const Nav_Input_t *input);
-bool          nav_route_record_finish   (void);
-void          nav_route_record_reset    (void);
-bool          nav_route_replay_start    (const Nav_Input_t *input);
-void          nav_route_replay_stop     (void);
-Nav_Route_Record_State_t nav_route_record_get_state(void);
-const Nav_Segment_t *nav_route_recorded_route(uint8 *route_len);
 
 #endif

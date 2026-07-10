@@ -2,6 +2,8 @@
 #include "../code/sensors/imu/imu.h"
 #include "../code/common/types.h"
 #include "../code/app/navigation/nav_engine.h"
+#include "../code/app/navigation/nav_adapter.h"
+#include "../code/app/navigation/nav_route_record.h"
 #include "../code/app/navigation/route_remote.h"
 #include "../code/app/vision/vision_pipeline.h"
 #include "../code/app/robot_control/robot_control.h"
