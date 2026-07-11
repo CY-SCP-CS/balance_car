@@ -7,7 +7,7 @@
 
 #include "../../common/utils.h"
 
-#define NAV_RECORD_STRAIGHT_SPEED  0.18f
+#define NAV_RECORD_STRAIGHT_SPEED  0.5f
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_MIN_DISTANCE_M  0.06f
 
