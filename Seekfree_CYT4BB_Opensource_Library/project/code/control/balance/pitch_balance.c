@@ -39,7 +39,7 @@ void pitch_balance_control(const Sensor_data_t *sensor_data,
     motor_cmd->right_motor_pwm = ROUND(-pwm_base);
 }
 
-#define MAX_STATIC_ANGLE ((1.5f) * DEG_TO_RAD) // 认为车体算得上”静止”的最大角度偏差（约1.5度）
+#define MAX_STATIC_ANGLE ((1.5f) * DEG_TO_RAD) // 认为车体算得上"静止"的最大角度偏差（约1.5度）
 
 void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,

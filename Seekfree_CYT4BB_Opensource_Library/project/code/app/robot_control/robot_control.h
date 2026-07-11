@@ -25,6 +25,10 @@ extern PID_Controller_t g_pitch_gyro_pid;
 extern PID_Controller_t g_yaw_angle_pid;
 extern PID_Controller_t g_yaw_pid;
 
+/* 腿关节 PID (jump.c LAUNCH 阶段临时拉高增益) */
+extern Leg_PID_t g_leg_left_pid;
+extern Leg_PID_t g_leg_right_pid;
+
 void robot_control_init(void);
 
 void sensor_update(const Sensor_data_t *sensor);
