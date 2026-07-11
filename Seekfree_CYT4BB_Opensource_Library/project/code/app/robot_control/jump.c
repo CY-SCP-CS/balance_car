@@ -46,7 +46,8 @@ typedef enum {
 #define OFF_REACH_Y     -60.0f       /* 伸腿够地 */
 #define OFF_CUSHION_Y   130.0f       /* 缓冲最深收腿 */
 
-#define FORWARD_PWM     300          /* 前倾补偿 */
+#define FORWARD_PWM     -300         /* 前倾渐变补偿 (随 forward 增减) */
+#define LANDING_BIAS_PWM 0           /* 恒定落地偏置 (暂时关闭) */
 
 #define TOTAL_JUMPS     3
 
@@ -311,8 +312,8 @@ static void run_cushion(const Sensor_data_t *sensor,
     Foot_position_t pos = { 0.0f, y };
 
     balance_with_yaw_scaled(sensor, motor_cmd, balance_weight);
-    motor_cmd->left_motor_pwm  += (int)(FORWARD_PWM * forward);
-    motor_cmd->right_motor_pwm += (int)(FORWARD_PWM * forward);
+    motor_cmd->left_motor_pwm  += (int)(FORWARD_PWM * forward) + LANDING_BIAS_PWM;
+    motor_cmd->right_motor_pwm += (int)(FORWARD_PWM * forward) + LANDING_BIAS_PWM;
 
     if (g_cycle > CUSHION_HOLD_CYCLES) {
         robot_control_leg_speed_feedback(sensor, &pos, &pos);
@@ -327,9 +328,10 @@ static void run_cushion(const Sensor_data_t *sensor,
         g_leg_right_pid.front.kp = 1200.0f;
         g_leg_right_pid.back.kp  = 1200.0f;
 
-        /* 切回正常控制前, 复位腿/偏航 PID, 清除指令.
-         * 注意: 不复位 balance PID — CUSHION 阶段 balance 一直在跑,
-         * 复位会导致正常控制从零开始, 落地必倒. */
+        /* 切回正常控制前, 复位所有 PID, 清除指令.
+         * LANDING_BIAS_PWM 提供恒定前推力对抗 CG 后移,
+         * balance PID 从零起步配合偏置快速建立稳定. */
+        robot_control_reset_balance_pid();
         robot_control_reset_leg_speed_pid();
         robot_control_reset_leg_pid();
         pid_reset(&g_yaw_angle_pid);

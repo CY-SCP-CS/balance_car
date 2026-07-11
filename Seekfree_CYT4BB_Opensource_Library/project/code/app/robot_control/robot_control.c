@@ -521,7 +521,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
 
     /* --- 传感器数据桥接 --- */
     sensor->angle_pitch    = ctrl->body_pitch;
-    sensor->angle_roll     = ctrl->body_roll;
+    sensor->angle_roll     = ctrl->body_roll - ROLL_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     sensor->angle_yaw      = ctrl->body_yaw;
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
