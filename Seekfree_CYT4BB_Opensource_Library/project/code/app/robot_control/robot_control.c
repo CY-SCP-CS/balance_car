@@ -580,7 +580,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
+    cmd->target_speed     = CLAMP(ctrl->velocity_cmd, -1.0f, 1.0f);
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
