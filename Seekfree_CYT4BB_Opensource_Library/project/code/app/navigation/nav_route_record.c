@@ -10,13 +10,11 @@
 #define NAV_RECORD_STRAIGHT_SPEED  0.18f
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_MIN_DISTANCE_M  0.06f
-#define NAV_RECORD_TIMEOUT_MAX_MS            15000u
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
 static float g_replay_start_distance;
 static float g_replay_start_yaw;
-static uint32 g_replay_start_time;
 
 static float keypoint_distance_from_start(uint8 index)
 {
@@ -55,20 +53,6 @@ static float keypoint_yaw_delta_from_start(uint8 index)
     }
 
     return yaw_delta;
-}
-
-static uint32 keypoint_elapsed_from_start(uint8 index)
-{
-    if (g_record_state.keypoint_count == 0u) {
-        return 0u;
-    }
-
-    if (index >= g_record_state.keypoint_count) {
-        index = (uint8)(g_record_state.keypoint_count - 1u);
-    }
-
-    return (uint32)(g_record_keypoints[index].time_ms -
-                    g_record_keypoints[0].time_ms);
 }
 
 void nav_route_record_notify_navigation_stopped(bool finished,
@@ -209,7 +193,6 @@ bool nav_route_replay_start(const Nav_Input_t *input)
     g_record_state.replay_index = 1u;
     g_replay_start_distance = input->distance_m;
     g_replay_start_yaw = input->yaw_rad;
-    g_replay_start_time = input->time_ms;
 
     return true;
 }
@@ -254,10 +237,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float progress = 1.0f;
         float target_yaw;
         float yaw_error;
-        bool timed_out;
         bool arrived;
-        uint32 target_elapsed = keypoint_elapsed_from_start(cur_index);
-        uint32 replay_elapsed = (uint32)(input->time_ms - g_replay_start_time);
 
         if (segment_distance > 0.0f) {
             progress = clamp((traveled - prev_distance) / segment_distance,
@@ -269,10 +249,6 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                      prev_yaw_delta +
                      segment_yaw_delta * progress;
         yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
-        timed_out = target_elapsed > 0u &&
-                    replay_elapsed > target_elapsed &&
-                    (uint32)(replay_elapsed - target_elapsed) >
-                    NAV_RECORD_TIMEOUT_MAX_MS;
 
         if (segment_distance >= NAV_RECORD_MIN_DISTANCE_M) {
             out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
@@ -285,7 +261,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                       fabsf(yaw_error) <= cfg.yaw_tolerance_rad;
         }
 
-        if (!arrived && !timed_out) {
+        if (!arrived) {
             out.region = NAV_REGION_NORMAL;
             out.steering_cmd = clamp(out.steering_cmd,
                                      -cfg.steering_limit,
