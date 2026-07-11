@@ -6,7 +6,7 @@
 #include "zf_driver_flash.h"
 
 #define NAV_ROUTE_STORAGE_MAGIC    0x4E415652u
-#define NAV_ROUTE_STORAGE_VERSION  3u
+#define NAV_ROUTE_STORAGE_VERSION  6u
 #define NAV_ROUTE_STORAGE_SLOT_COUNT  3u
 #define NAV_ROUTE_STORAGE_FIRST_PAGE  (FLASH_PAGE_NUM - NAV_ROUTE_STORAGE_SLOT_COUNT)
 #define NAV_ROUTE_STORAGE_SECTOR   0u
@@ -15,9 +15,9 @@ typedef struct {
     uint32 magic;
     uint32 version;
     uint32 sequence;
-    uint32 route_len;
+    uint32 keypoint_count;
     uint32 checksum;
-    Nav_Segment_t route[NAV_RECORD_MAX_SEGMENTS];
+    Nav_Keypoint_t keypoints[NAV_RECORD_MAX_KEYPOINTS];
 } Nav_Route_Storage_Image_t;
 
 #define NAV_ROUTE_STORAGE_WORDS \
@@ -59,19 +59,17 @@ static uint32 storage_slot_page(uint8 slot)
     return NAV_ROUTE_STORAGE_FIRST_PAGE + slot;
 }
 
-static bool storage_buffer_valid(uint8 max_route_len,
-                                 uint8 *route_len,
+static bool storage_buffer_valid(uint8 max_keypoints,
+                                 uint8 *keypoint_count,
                                  uint32 *sequence)
 {
     uint32 stored_checksum;
 
     if (g_storage_buffer.image.magic != NAV_ROUTE_STORAGE_MAGIC ||
         g_storage_buffer.image.version != NAV_ROUTE_STORAGE_VERSION ||
-        g_storage_buffer.image.route_len == 0u ||
-        g_storage_buffer.image.route_len > NAV_RECORD_MAX_SEGMENTS ||
-        g_storage_buffer.image.route_len > max_route_len ||
-        g_storage_buffer.image.route[g_storage_buffer.image.route_len - 1u].action !=
-            NAV_ACTION_STOP) {
+        g_storage_buffer.image.keypoint_count < 2u ||
+        g_storage_buffer.image.keypoint_count > NAV_RECORD_MAX_KEYPOINTS ||
+        g_storage_buffer.image.keypoint_count > max_keypoints) {
         return false;
     }
 
@@ -86,8 +84,8 @@ static bool storage_buffer_valid(uint8 max_route_len,
 
     g_storage_buffer.image.checksum = stored_checksum;
 
-    if (route_len != NULL) {
-        *route_len = (uint8)g_storage_buffer.image.route_len;
+    if (keypoint_count != NULL) {
+        *keypoint_count = (uint8)g_storage_buffer.image.keypoint_count;
     }
 
     if (sequence != NULL) {
@@ -98,15 +96,15 @@ static bool storage_buffer_valid(uint8 max_route_len,
 }
 
 static bool storage_read_slot(uint8 slot,
-                              Nav_Segment_t *route,
-                              uint8 max_route_len,
-                              uint8 *route_len,
+                              Nav_Keypoint_t *keypoints,
+                              uint8 max_keypoints,
+                              uint8 *keypoint_count,
                               uint32 *sequence)
 {
-    uint8 stored_route_len = 0u;
+    uint8 stored_keypoint_count = 0u;
 
     if (slot >= NAV_ROUTE_STORAGE_SLOT_COUNT ||
-        max_route_len == 0u ||
+        max_keypoints == 0u ||
         NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
         return false;
     }
@@ -116,18 +114,18 @@ static bool storage_read_slot(uint8 slot,
                     g_storage_buffer.words,
                     NAV_ROUTE_STORAGE_WORDS);
 
-    if (!storage_buffer_valid(max_route_len, &stored_route_len, sequence)) {
+    if (!storage_buffer_valid(max_keypoints, &stored_keypoint_count, sequence)) {
         return false;
     }
 
-    if (route != NULL) {
-        for (uint8 i = 0u; i < stored_route_len; i++) {
-            route[i] = g_storage_buffer.image.route[i];
+    if (keypoints != NULL) {
+        for (uint8 i = 0u; i < stored_keypoint_count; i++) {
+            keypoints[i] = g_storage_buffer.image.keypoints[i];
         }
     }
 
-    if (route_len != NULL) {
-        *route_len = stored_route_len;
+    if (keypoint_count != NULL) {
+        *keypoint_count = stored_keypoint_count;
     }
 
     return true;
@@ -137,7 +135,7 @@ static bool storage_find_latest_slot(uint8 *latest_slot,
                                      uint32 *latest_sequence)
 {
     bool have_latest = false;
-    uint8 route_len;
+    uint8 keypoint_count;
     uint32 sequence;
 
     *latest_slot = 0u;
@@ -146,8 +144,8 @@ static bool storage_find_latest_slot(uint8 *latest_slot,
     for (uint8 slot = 0u; slot < NAV_ROUTE_STORAGE_SLOT_COUNT; slot++) {
         if (!storage_read_slot(slot,
                                NULL,
-                               NAV_RECORD_MAX_SEGMENTS,
-                               &route_len,
+                               NAV_RECORD_MAX_KEYPOINTS,
+                               &keypoint_count,
                                &sequence)) {
             continue;
         }
@@ -175,7 +173,7 @@ static bool storage_find_history_slot(uint8 history_index, uint8 *history_slot)
     for (uint8 rank = 0u; rank <= history_index; rank++) {
         bool have_best = false;
         uint8 best_slot = 0u;
-        uint8 route_len;
+        uint8 keypoint_count;
         uint32 best_sequence = 0u;
         uint32 sequence;
 
@@ -186,8 +184,8 @@ static bool storage_find_history_slot(uint8 history_index, uint8 *history_slot)
 
             if (!storage_read_slot(slot,
                                    NULL,
-                                   NAV_RECORD_MAX_SEGMENTS,
-                                   &route_len,
+                                   NAV_RECORD_MAX_KEYPOINTS,
+                                   &keypoint_count,
                                    &sequence)) {
                 continue;
             }
@@ -216,17 +214,17 @@ void nav_route_storage_init(void)
     storage_ensure_init();
 }
 
-bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
+bool nav_route_storage_save(const Nav_Keypoint_t *keypoints,
+                            uint8 keypoint_count)
 {
     uint8 latest_slot = 0u;
     uint8 write_slot = 0u;
     uint32 latest_sequence = 0u;
     uint32 sequence = 1u;
 
-    if (route == NULL ||
-        route_len == 0u ||
-        route_len > NAV_RECORD_MAX_SEGMENTS ||
-        route[route_len - 1u].action != NAV_ACTION_STOP ||
+    if (keypoints == NULL ||
+        keypoint_count < 2u ||
+        keypoint_count > NAV_RECORD_MAX_KEYPOINTS ||
         NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
         return false;
     }
@@ -242,11 +240,11 @@ bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
     g_storage_buffer.image.magic = NAV_ROUTE_STORAGE_MAGIC;
     g_storage_buffer.image.version = NAV_ROUTE_STORAGE_VERSION;
     g_storage_buffer.image.sequence = sequence;
-    g_storage_buffer.image.route_len = route_len;
+    g_storage_buffer.image.keypoint_count = keypoint_count;
     g_storage_buffer.image.checksum = 0u;
 
-    for (uint8 i = 0u; i < route_len; i++) {
-        g_storage_buffer.image.route[i] = route[i];
+    for (uint8 i = 0u; i < keypoint_count; i++) {
+        g_storage_buffer.image.keypoints[i] = keypoints[i];
     }
 
     g_storage_buffer.image.checksum =
@@ -259,21 +257,21 @@ bool nav_route_storage_save(const Nav_Segment_t *route, uint8 route_len)
 
     return storage_read_slot(write_slot,
                              NULL,
-                             NAV_RECORD_MAX_SEGMENTS,
+                             NAV_RECORD_MAX_KEYPOINTS,
                              NULL,
                              NULL);
 }
 
-bool nav_route_storage_load_history(Nav_Segment_t *route,
-                                    uint8 max_route_len,
-                                    uint8 *route_len,
+bool nav_route_storage_load_history(Nav_Keypoint_t *keypoints,
+                                    uint8 max_keypoints,
+                                    uint8 *keypoint_count,
                                     uint8 history_index)
 {
     uint8 history_slot = 0u;
 
-    if (route == NULL ||
-        route_len == NULL ||
-        max_route_len == 0u ||
+    if (keypoints == NULL ||
+        keypoint_count == NULL ||
+        max_keypoints == 0u ||
         NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
         return false;
     }
@@ -284,19 +282,29 @@ bool nav_route_storage_load_history(Nav_Segment_t *route,
         return false;
     }
 
-    return storage_read_slot(history_slot, route, max_route_len, route_len, NULL);
+    return storage_read_slot(history_slot,
+                             keypoints,
+                             max_keypoints,
+                             keypoint_count,
+                             NULL);
 }
 
-bool nav_route_storage_load(Nav_Segment_t *route,
-                            uint8 max_route_len,
-                            uint8 *route_len)
+bool nav_route_storage_load(Nav_Keypoint_t *keypoints,
+                            uint8 max_keypoints,
+                            uint8 *keypoint_count)
 {
-    return nav_route_storage_load_history(route, max_route_len, route_len, 0u);
+    return nav_route_storage_load_history(keypoints,
+                                          max_keypoints,
+                                          keypoint_count,
+                                          0u);
 }
 
-bool nav_route_storage_load_previous(Nav_Segment_t *route,
-                                     uint8 max_route_len,
-                                     uint8 *route_len)
+bool nav_route_storage_load_previous(Nav_Keypoint_t *keypoints,
+                                     uint8 max_keypoints,
+                                     uint8 *keypoint_count)
 {
-    return nav_route_storage_load_history(route, max_route_len, route_len, 1u);
+    return nav_route_storage_load_history(keypoints,
+                                          max_keypoints,
+                                          keypoint_count,
+                                          1u);
 }

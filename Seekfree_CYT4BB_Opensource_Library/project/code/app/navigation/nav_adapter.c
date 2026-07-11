@@ -5,21 +5,24 @@
 
 void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
 {
-    static float yaw_rad = 0.0f;
+    static float yaw_zero = 0.0f;
+    static bool yaw_zero_set = false;
 
     if (input == NULL || ctrl == NULL) {
         return;
     }
 
-    yaw_rad = nav_wrap_pi(yaw_rad + ctrl->gyro_yaw_rate * NAV_LOOP_DT_S);
+    if (!yaw_zero_set) {
+        yaw_zero = ctrl->body_yaw;
+        yaw_zero_set = true;
+    }
 
-    input->yaw_rad = yaw_rad;
+    input->yaw_rad = nav_wrap_pi(ctrl->body_yaw - yaw_zero);
     input->time_ms += NAV_LOOP_DT_MS;
 
     input->distance_m = robot_control_get_distance();
 
-    /* landmark / obstacle fields are populated by vision_feed_nav_input()
-       which the caller must invoke before calling nav_input_update_from_ctrl(). */
+    /* Vision updates landmark / obstacle fields after this update. */
 }
 
 void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)

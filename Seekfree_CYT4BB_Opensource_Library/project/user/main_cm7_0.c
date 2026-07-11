@@ -77,13 +77,14 @@ int main(void)
         vision_update(&g_vision);
 
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
+        vision_feed_nav_input(&g_nav_input, &g_vision);
         route_remote_update(&g_nav_input);
 
         {
             Nav_Route_Record_State_t route_state = nav_route_record_get_state();
 
             if (route_state.mode == NAV_ROUTE_REPLAYING) {
-                Nav_Output_t nav_out = nav_update(&g_nav_input);
+                Nav_Output_t nav_out = nav_route_replay_update(&g_nav_input);
                 nav_apply_ctrl(&g_ctrl, &nav_out);
             }
         }

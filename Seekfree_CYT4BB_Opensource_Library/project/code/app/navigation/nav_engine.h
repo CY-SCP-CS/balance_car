@@ -46,19 +46,15 @@ typedef struct {
     float yaw_rad;
     uint32 time_ms;
     Nav_Landmark_t landmark;
-    float landmark_offset;
-    uint8 landmark_confidence;
     bool obstacle_close;
 } Nav_Input_t;
 
 typedef struct {
     float yaw_kp;
     float turn_kp;
-    float landmark_kp;
     float steering_limit;
     float distance_tolerance_m;
     float yaw_tolerance_rad;
-    uint8 landmark_min_confidence;
 } Nav_Config_t;
 
 typedef struct {

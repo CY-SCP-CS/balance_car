@@ -6,10 +6,15 @@
 
 #define REMOTE_LPF_ALPHA       0.25f
 #define REMOTE_BEEP_KEY        2u
+#define REMOTE_CMD_DT_S        0.001f
+#define REMOTE_SPEED_ACCEL     3.0f
+#define REMOTE_SPEED_DECEL     5.0f
+#define REMOTE_SPEED_STOP_EPS  0.002f
 
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
 static float g_remote_filtered_joystick[4];
+static float g_remote_velocity_target;
 static uint8 g_remote_beep_key_prev;
 
 static float remote_absf(float value)
@@ -30,6 +35,19 @@ static float remote_clamp(float value, float min_value, float max_value)
     return value;
 }
 
+static float remote_approach(float current, float target, float max_delta)
+{
+    float delta = target - current;
+
+    if (delta > max_delta) {
+        delta = max_delta;
+    } else if (delta < -max_delta) {
+        delta = -max_delta;
+    }
+
+    return current + delta;
+}
+
 static float remote_normalize_joystick(int16 raw)
 {
     float value = (float)raw / REMOTE_LORA_JOYSTICK_MAX;
@@ -44,11 +62,7 @@ static float remote_normalize_joystick(int16 raw)
 
 static int16 remote_get_raw_joystick(const lora3a22_uart_transfer_dat_struct *frame, uint8 channel)
 {
-    const uint8 *frame_data = (const uint8 *)frame;
-    uint8 offset = (uint8)(2u + channel * 2u);
-
-    return (int16)((uint16)frame_data[offset] << 8 |
-                   (uint16)frame_data[offset + 1u]);
+    return frame->joystick[channel];
 }
 
 static bool remote_read_lora_frame(lora3a22_uart_transfer_dat_struct *frame)
@@ -71,6 +85,7 @@ static void remote_clear_runtime_state(void)
         g_remote_state.key[i] = 0u;
         g_remote_state.switch_key[i] = 0u;
     }
+    g_remote_velocity_target = 0.0f;
     g_remote_beep_key_prev = 0u;
 }
 
@@ -89,6 +104,7 @@ void remote_comm_init(void)
 {
     memset(&g_remote_state, 0, sizeof(g_remote_state));
     memset(g_remote_filtered_joystick, 0, sizeof(g_remote_filtered_joystick));
+    g_remote_velocity_target = 0.0f;
     g_remote_beep_key_prev = 0u;
     g_remote_timeout_ms = REMOTE_LORA_TIMEOUT_MS;
     lora3a22_init();
@@ -131,6 +147,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     }
 
     if (!g_remote_state.connected) {
+        g_remote_velocity_target = 0.0f;
         ctrl->velocity_cmd = 0.0f;
         ctrl->steering_cmd = 0.0f;
         ctrl->on_bridge = false;
@@ -144,9 +161,22 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
      * joystick[1] = 左摇杆 Y（前后）
      * 这里把左摇杆前后控制速度，左右控制转向。 */
     float velocity_cmd = g_remote_filtered_joystick[1];
-    float steering_cmd = g_remote_filtered_joystick[2];
+    float steering_cmd = -g_remote_filtered_joystick[2];
+    float speed_rate = REMOTE_SPEED_ACCEL;
 
-    ctrl->velocity_cmd = remote_clamp(velocity_cmd, -1.0f, 1.0f);
+    if (velocity_cmd * g_remote_velocity_target < 0.0f ||
+        remote_absf(velocity_cmd) < remote_absf(g_remote_velocity_target)) {
+        speed_rate = REMOTE_SPEED_DECEL;
+    }
+
+    g_remote_velocity_target = remote_approach(g_remote_velocity_target,
+        velocity_cmd, speed_rate * REMOTE_CMD_DT_S);
+    if (velocity_cmd == 0.0f &&
+        remote_absf(g_remote_velocity_target) < REMOTE_SPEED_STOP_EPS) {
+        g_remote_velocity_target = 0.0f;
+    }
+
+    ctrl->velocity_cmd = remote_clamp(g_remote_velocity_target, -1.0f, 1.0f);
     ctrl->steering_cmd = remote_clamp(steering_cmd, -1.0f, 1.0f);
 }
 

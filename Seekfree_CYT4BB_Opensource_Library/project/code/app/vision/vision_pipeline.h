@@ -18,8 +18,6 @@ typedef struct {
     float              line_offset;         /* normalised track-centre offset, -1 to +1 */
     uint8              line_confidence;     /* 0-10 */
     Nav_Landmark_t     landmark;
-    float              landmark_offset;
-    uint8              landmark_confidence;
     bool               obstacle_close;
     Minefield_Result_t minefield;
     Stair_Result_t     stair;
