@@ -62,11 +62,7 @@ static float remote_normalize_joystick(int16 raw)
 
 static int16 remote_get_raw_joystick(const lora3a22_uart_transfer_dat_struct *frame, uint8 channel)
 {
-    const uint8 *frame_data = (const uint8 *)frame;
-    uint8 offset = (uint8)(2u + channel * 2u);
-
-    return (int16)((uint16)frame_data[offset] << 8 |
-                   (uint16)frame_data[offset + 1u]);
+    return frame->joystick[channel];
 }
 
 static bool remote_read_lora_frame(lora3a22_uart_transfer_dat_struct *frame)
