@@ -161,7 +161,7 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
      * joystick[1] = 左摇杆 Y（前后）
      * 这里把左摇杆前后控制速度，左右控制转向。 */
     float velocity_cmd = g_remote_filtered_joystick[1];
-    float steering_cmd = g_remote_filtered_joystick[2];
+    float steering_cmd = -g_remote_filtered_joystick[2];
     float speed_rate = REMOTE_SPEED_ACCEL;
 
     if (velocity_cmd * g_remote_velocity_target < 0.0f ||
