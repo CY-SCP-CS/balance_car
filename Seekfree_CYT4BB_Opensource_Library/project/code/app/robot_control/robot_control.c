@@ -36,9 +36,10 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
  */
 #define USE_VMC 0
 #define REMOTE_STEER_GAIN_RAD 6.00f
+#define AIR_BALANCE_GAIN      1.0f    /* 空中平衡环缩放, 轮子反作用力矩稳定身体 */
 
 /* 腿部关节 PID 控制器 */
-static Leg_PID_t g_leg_left_pid, g_leg_right_pid;
+Leg_PID_t g_leg_left_pid, g_leg_right_pid;
 
 /* 腿部关节目标角度 (相对限位的偏移量, rad) */
 static Leg_Target_t g_leg_target_left, g_leg_target_right;
@@ -51,6 +52,46 @@ PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 
+/* ==================== 720° 原地旋转 (比赛元素) ==================== */
+
+#define ROTATE720_SPEED     (2.0f * M_PI)   /* 360°/s */
+#define ROTATE720_TARGET    (4.0f * M_PI)   /* 720° = 4π rad */
+#define ROTATE720_MARGIN    (0.4f * M_PI)   /* 10% 冗余 ≈ 72° */
+
+typedef enum {
+    ROTATE720_IDLE = 0,
+    ROTATE720_ACTIVE,
+    ROTATE720_DONE
+} Rotate720State_t;
+
+static Rotate720State_t g_rotate720_state = ROTATE720_IDLE;
+static float            g_rotate720_accum = 0.0f;  /* 累积绝对转角 (rad) */
+static float            g_rotate720_target = 0.0f; /* 持续递增的目标角度, 不归一化 */
+
+/* ─── 720° 旋转公开接口 ─── */
+
+void robot_control_start_rotate_720(void)
+{
+    if (g_rotate720_state == ROTATE720_IDLE) {
+        g_rotate720_state = ROTATE720_ACTIVE;
+        g_rotate720_accum = 0.0f;
+        /* g_rotate720_target 在 control_task 首周期用当前 yaw 初始化 */
+        pid_reset(&g_yaw_pid);
+        pid_reset(&g_yaw_angle_pid);
+    }
+}
+
+bool robot_control_rotate_720_is_done(void)
+{
+    return (g_rotate720_state == ROTATE720_DONE);
+}
+
+void robot_control_reset_rotate_720(void)
+{
+    g_rotate720_state = ROTATE720_IDLE;
+    g_rotate720_accum = 0.0f;
+}
+
 
 void robot_control_init(void){
     //pitch的PID
@@ -61,7 +102,7 @@ void robot_control_init(void){
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
-    pid_init(&g_leg_speed_pid, 422.0f, 0.47f, 2.00f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
+    pid_init(&g_leg_speed_pid, 552.0f, 0.97f, 3.81f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
     pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
@@ -118,6 +159,13 @@ void robot_control_reset_balance_pid(void){
 void robot_control_reset_leg_speed_pid(void){
     pid_reset(&g_leg_speed_pid);
     pid_reset(&g_leg_roll_pid);
+}
+
+void robot_control_reset_leg_pid(void){
+    pid_reset(&g_leg_left_pid.front);
+    pid_reset(&g_leg_left_pid.back);
+    pid_reset(&g_leg_right_pid.front);
+    pid_reset(&g_leg_right_pid.back);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -229,52 +277,90 @@ void control_task(void){
         return;
     }
 
-    if (jump_is_active()) {
-        jump_control(&sensor_local, &g_motor_cmd);
-        return;
-    }
+    bool airborne = jump_is_airborne();
 
-    //pitch平衡环
-    pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-        &g_pitch_gyro_pid, &g_motor_cmd);
+    /* ── 轮式平衡 + 偏航 ── */
+    if (!airborne) {
+        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
+            &g_pitch_gyro_pid, &g_motor_cmd);
 
-    //差速转向: 串级控制 (外环角度, 内环角速度), 直接使用 target_direction
-    {
-        float yaw_cur   = sensor_local.angle_yaw;
-        float yaw_error = cmd_local.target_direction - yaw_cur;
-        while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
-        while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
-        yaw_cur = cmd_local.target_direction - yaw_error;
+        /* ── 720° 原地旋转: 持续递增目标角度, 复用现有 yaw 串级 ── */
+        if (g_rotate720_state == ROTATE720_ACTIVE) {
+            /* 首周期用当前 yaw 初始化移动目标 */
+            if (g_rotate720_accum == 0.0f) {
+                g_rotate720_target = sensor_local.angle_yaw;
+            }
+            /* 每周期递增, 不归一化 — yaw 误差归一化逻辑会处理角度回绕 */
+            g_rotate720_target += ROTATE720_SPEED * ROBOT_CONTROL_DT;
+            cmd_local.target_direction = g_rotate720_target;
 
-        /* 方向大幅跳变时复位 yaw PID (平滑积分不触发) */
-        static float prev_target_direction = 0.0f;
-        if (fabsf(cmd_local.target_direction - prev_target_direction) > 0.5f) {
-            pid_reset(&g_yaw_angle_pid);
-            pid_reset(&g_yaw_pid);
+            /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
+            g_rotate720_accum += fabsf(sensor_local.gyro_yaw) * ROBOT_CONTROL_DT;
+
+            if (g_rotate720_accum >= ROTATE720_TARGET + ROTATE720_MARGIN) {
+                g_rotate720_state = ROTATE720_DONE;
+                pid_reset(&g_yaw_angle_pid);
+                pid_reset(&g_yaw_pid);
+                /* 复位后正常 yaw 串级会锁定当前位置 */
+            }
         }
-        prev_target_direction = cmd_local.target_direction;
 
-        /* 外环: 角度误差 → 角速度修正 */
-        float rate_correction = pid_calculate(&g_yaw_angle_pid, cmd_local.target_direction, yaw_cur);
+        /* 差速转向: 串级控制 (外环角度, 内环角速度), 直接使用 target_direction */
+        {
+            float yaw_cur   = sensor_local.angle_yaw;
+            float yaw_error = cmd_local.target_direction - yaw_cur;
+            while (yaw_error >  M_PI) yaw_error -= 2.0f * M_PI;
+            while (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
+            yaw_cur = cmd_local.target_direction - yaw_error;
 
-        /* 内环: 角速度修正 → 差模 PWM */
-        float yaw_out = pid_calculate(&g_yaw_pid, rate_correction, -sensor_local.gyro_yaw);
-        int   yaw_pwm = ROUND(yaw_out);
-        g_motor_cmd.left_motor_pwm  -= yaw_pwm;
-        g_motor_cmd.right_motor_pwm -= yaw_pwm;
+            /* 方向大幅跳变时复位 yaw PID (平滑积分不触发) */
+            static float prev_target_direction = 0.0f;
+            if (fabsf(cmd_local.target_direction - prev_target_direction) > 0.5f) {
+                pid_reset(&g_yaw_angle_pid);
+                pid_reset(&g_yaw_pid);
+            }
+            prev_target_direction = cmd_local.target_direction;
+
+            /* 外环: 角度误差 → 角速度修正 */
+            float rate_correction = pid_calculate(&g_yaw_angle_pid, cmd_local.target_direction, yaw_cur);
+
+            /* 内环: 角速度修正 → 差模 PWM */
+            float yaw_out = pid_calculate(&g_yaw_pid, rate_correction, -sensor_local.gyro_yaw);
+            int   yaw_pwm = ROUND(yaw_out);
+            g_motor_cmd.left_motor_pwm  -= yaw_pwm;
+            g_motor_cmd.right_motor_pwm -= yaw_pwm;
+        }
+
+        /* 自动压弯: 根据 yaw rate 计算 body roll, 转弯时内侧下沉 */
+        {
+            float roll_from_turn = -0.2f * sensor_local.gyro_yaw / MAX_YAW_RATE;
+            cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
+        }
+    } else {
+        /* 空中: 轮子反作用力矩提供部分身体稳定 */
+        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
+            &g_pitch_gyro_pid, &g_motor_cmd);
+        g_motor_cmd.left_motor_pwm  = (int)(g_motor_cmd.left_motor_pwm  * AIR_BALANCE_GAIN);
+        g_motor_cmd.right_motor_pwm = (int)(g_motor_cmd.right_motor_pwm * AIR_BALANCE_GAIN);
     }
 
-    // 自动压弯: 根据 yaw rate 计算 body roll, 转弯时内侧下沉
-    {
-        float roll_from_turn = -0.2f * sensor_local.gyro_yaw / MAX_YAW_RATE;
-        cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
+    /* ── 足端位置计算 ── */
+    if (!airborne) {
+        leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
+            &foot_position_left, &foot_position_right);
+    } else {
+        foot_position_left.x  = 0.0f;
+        foot_position_left.y  = 0.0f;
+        foot_position_right.x = 0.0f;
+        foot_position_right.y = 0.0f;
     }
 
-    //计算目标足端位置
-    leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
-        &foot_position_left, &foot_position_right);
+    /* ── 跳跃腿轨迹叠加 (在 leg_cmd_solve 之后修改足端 Y + X 偏置) ── */
+    if (jump_is_active()) {
+        jump_leg_overlay(&foot_position_left, &foot_position_right, &sensor_local);
+    }
 
-    //腿的控制
+    /* ── 腿控制 ── */
 #if USE_VMC
     /* ── VMC 方案（修复了角度偏置/符号/目标计算） ── */
     leg_vmc_control(&g_vmc_config, &sensor_local,
@@ -450,7 +536,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
 
     /* --- 传感器数据桥接 --- */
     sensor->angle_pitch    = ctrl->body_pitch;
-    sensor->angle_roll     = ctrl->body_roll;
+    sensor->angle_roll     = ctrl->body_roll - ROLL_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     sensor->angle_yaw      = ctrl->body_yaw;
     sensor->gyro_pitch     = ctrl->gyro_pitch_rate;
     sensor->gyro_yaw       = ctrl->gyro_yaw_rate;
@@ -580,7 +666,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = CLAMP(ctrl->velocity_cmd, -1.0f, 1.0f);
+    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;

@@ -1,107 +1,75 @@
 #include "jump.h"
 #include "robot_control.h"
-#include "../../control/leg/kinematics.h"
-#include "../../control/leg/jacobian.h"
-#include "../../control/leg/leg_pid_control.h"
-#include "../../control/balance/pitch_balance.h"
-#include "../../lib/pid/pid_calculate.h"
+#include <math.h>
 #include <stdbool.h>
 
 /* =========================== 状态枚举 =========================== */
 typedef enum {
     JUMP_IDLE = 0,
-    JUMP_SQUAT,         /* 下蹲蓄力 */
-    JUMP_PUSH,          /* 全力蹬地, 直到离地 */
-    JUMP_FLY_UP,        /* 上升: 收腿, 等顶点 */
-    JUMP_FLY_DOWN,      /* 下降: 伸腿够地, 等触地 */
-    JUMP_CUSHION,       /* 缓冲: 深收 → 按住 → 慢放 */
-    JUMP_INTERVAL,      /* 跳跃间隔 */
-    JUMP_END            /* 结束 */
+    JUMP_STABILIZE,     /* 自稳等待 (着地, 3秒) */
+    JUMP_SQUAT,         /* 下蹲蓄力 (着地) */
+    JUMP_LAUNCH,        /* 蹬地伸腿 (着地, 至离地) */
+    JUMP_AIR_ASCEND,    /* 上升段: 收腿, 等顶点 */
+    JUMP_AIR_DESCEND,   /* 下降段: 伸腿够地, 等触地 */
+    JUMP_LAND           /* 缓冲着地 */
 } JumpState_t;
 
-/* ===================== 可调参数 (1 kHz) ===================== */
+/* ===================== 可调参数 ===================== */
 
-#define SQUAT_CYCLES          500     /* 下蹲 500ms */
-#define PUSH_TIMEOUT_CYCLES   200     /* 推地最多 200ms */
-#define CUSHION_HOLD_CYCLES   200     /* 深收保持 200ms */
-#define CUSHION_RELEASE_CYCLES 600    /* 缓慢释放 600ms */
-#define CUSHION_RAMP_MS       30      /* 收腿渐变 30ms */
-#define BALANCE_RAMP_MS       50      /* 平衡渐变 50ms */
-#define INTERVAL_CYCLES       10000   /* 跳跃间隔 10s */
+/* Y 偏移 (mm, 叠加到 leg_cmd_solve 的 Y 上) */
+#define JUMP_SQUAT_Y        100.0f   /* 下蹲收腿深度 */
+#define JUMP_PUSH_Y        -400.0f   /* 蹬地伸腿 (饱和在关节限位) */
+#define JUMP_TUCK_Y          80.0f   /* 空中收腿 */
+#define JUMP_REACH_Y        -60.0f   /* 空中伸腿够地 */
+#define JUMP_CUSHION_DELTA   100.0f   /* 落地相对缓冲深度 */
 
-/* 飞行阶段 */
-#define APOGEE_THRESHOLD      0.3f    /* accel_z < 此值 = 到顶 */
+/* 前向推进 */
+#define JUMP_FORWARD_BIAS   -30.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
+
+/* 时序 (1kHz cycles) */
+#define STABILIZE_DURATION    3000    /* 起跳前自稳 3 秒 */
+#define SQUAT_DURATION        400
+#define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
+#define LAUNCH_TIMEOUT        200
+#define TUCK_RAMP_MS           30
+#define REACH_RAMP_MS          30
+#define CUSHION_RAMP_MS        30
+#define CUSHION_HOLD_MS       200
+#define CUSHION_RELEASE_MS    400
+#define BALANCE_RAMP_MS        50
+
+/* 飞行阶段检测阈值 */
+#define APOGEE_THRESHOLD      0.3f    /* accel_z < 此值 = 到顶点 */
 #define APOGEE_TIMEOUT_MS     150     /* 等顶点超时 */
-#define EXTEND_MS             30      /* 伸腿时间 */
 #define IMPACT_ACCEL          1.2f    /* accel_z > 此值 = 触地 */
-#define FREEZE_MS             15      /* 伸腿后等 15ms 才检测触地, 防误触发 */
+#define FREEZE_MS             15      /* 伸腿后冻结期, 防误触发 */
 #define FLY_TIMEOUT_CYCLES    500     /* 飞行总超时 */
-
 #define ACCEL_FREEFALL_THRESHOLD 0.3f /* 自由落体判据 */
 
-/* 足端偏移 (mm), Y<0=伸腿 Y>0=收腿 */
-#define OFF_PUSH_Y     -400.0f       /* 蹬地 */
-#define OFF_SQUAT_Y     120.0f       /* 下蹲 */
-#define OFF_TUCK_Y       85.0f       /* 空中收腿 */
-#define OFF_REACH_Y     -60.0f       /* 伸腿够地 */
-#define OFF_CUSHION_Y   130.0f       /* 缓冲最深收腿 */
-
-#define FORWARD_PWM     300          /* 前倾补偿 */
-
-#define TOTAL_JUMPS     3
+/* 腿 PID 临时高增益 (LAUNCH 阶段减少力冲击持续时间) */
+#define LAUNCH_KP             10000.0f
+#define LAUNCH_KI             50.0f
+#define NOMINAL_KP            1200.0f
+#define NOMINAL_KI            0.0f
 
 /* ======================== 静态变量 ============================= */
 
 static JumpState_t  g_state    = JUMP_IDLE;
 static uint16_t     g_cycle    = 0;
-static uint8_t      g_jump_num = 0;
 
-static Leg_PID_t    g_leg_left_pid;
-static Leg_PID_t    g_leg_right_pid;
-static Leg_Target_t g_target_left;
-static Leg_Target_t g_target_right;
+/* LAND: 触地时记录的腿 Y 位置, 用于相对缓冲 */
+static float g_land_y0 = 0.0f;
+
+/* 离地瞬间捕获的足端 X (含重心补偿), 空中阶段保持 */
+static float g_air_x_left  = 0.0f;
+static float g_air_x_right = 0.0f;
+
+/* SQUAT 开始时捕获的足端 Y 基线 (含 roll 补偿, 保留重心不对称) */
+static float g_base_y_left  = 0.0f;
+static float g_base_y_right = 0.0f;
 
 /* ======================== 辅助函数 ============================= */
 
-static void reset_balance(void) {
-    robot_control_reset_balance_pid();
-}
-
-static void run_leg_pid(const Sensor_data_t *sensor,
-                        Motor_cmd_duty_t *motor_cmd)
-{
-    leg_pid_control(&g_leg_left_pid,  &g_target_left,
-                    sensor, LEG_LEFT,  motor_cmd);
-    leg_pid_control(&g_leg_right_pid, &g_target_right,
-                    sensor, LEG_RIGHT, motor_cmd);
-}
-
-static void balance_with_yaw_scaled(const Sensor_data_t *sensor,
-                                    Motor_cmd_duty_t *motor_cmd,
-                                    float weight)
-{
-    if (weight <= 0.0f) {
-        motor_cmd->left_motor_pwm  = 0;
-        motor_cmd->right_motor_pwm = 0;
-        return;
-    }
-
-    pitch_balance_control(sensor,
-        &g_speed_pid, &g_pitch_angle_pid, &g_pitch_gyro_pid,
-        motor_cmd);
-
-    float yaw_out = pid_calculate(&g_yaw_pid, 0.0f, -sensor->gyro_yaw);
-    int   yaw_pwm = ROUND(yaw_out);
-    motor_cmd->left_motor_pwm  += yaw_pwm;
-    motor_cmd->right_motor_pwm -= yaw_pwm;
-
-    if (weight < 1.0f) {
-        motor_cmd->left_motor_pwm  = (int)(motor_cmd->left_motor_pwm  * weight);
-        motor_cmd->right_motor_pwm = (int)(motor_cmd->right_motor_pwm * weight);
-    }
-}
-
-/** 线性插值: from → to, t in [0,1] */
 static float lerp(float from, float to, float t) {
     if (t <= 0.0f) return from;
     if (t >= 1.0f) return to;
@@ -113,252 +81,202 @@ static void enter_state(JumpState_t new_state) {
     g_cycle = 0;
 }
 
+/** 临时拉高腿 PID 增益 (LAUNCH 阶段) */
+static void leg_pid_set_launch_gains(void) {
+    g_leg_left_pid.front.kp  = LAUNCH_KP;
+    g_leg_left_pid.front.ki  = LAUNCH_KI;
+    g_leg_left_pid.back.kp   = LAUNCH_KP;
+    g_leg_left_pid.back.ki   = LAUNCH_KI;
+    g_leg_right_pid.front.kp = LAUNCH_KP;
+    g_leg_right_pid.front.ki = LAUNCH_KI;
+    g_leg_right_pid.back.kp  = LAUNCH_KP;
+    g_leg_right_pid.back.ki  = LAUNCH_KI;
+}
+
+/** 恢复腿 PID 标称增益 */
+static void leg_pid_restore_nominal_gains(void) {
+    g_leg_left_pid.front.kp  = NOMINAL_KP;
+    g_leg_left_pid.front.ki  = NOMINAL_KI;
+    g_leg_left_pid.back.kp   = NOMINAL_KP;
+    g_leg_left_pid.back.ki   = NOMINAL_KI;
+    g_leg_right_pid.front.kp = NOMINAL_KP;
+    g_leg_right_pid.front.ki = NOMINAL_KI;
+    g_leg_right_pid.back.kp  = NOMINAL_KP;
+    g_leg_right_pid.back.ki  = NOMINAL_KI;
+}
+
 /* ====================== 状态机 ============================= */
 
-/* ── SQUAT: 下蹲蓄力 ── */
-static void run_squat(const Sensor_data_t *sensor,
-                      Motor_cmd_duty_t *motor_cmd)
+/* ── STABILIZE: 自稳等待 (着地, 3秒) ──
+ *   正常控制运行, 不做任何叠加, 纯计时等车身稳定.
+ */
+static void run_stabilize(const Sensor_data_t *sensor,
+                          Foot_position_t *left, Foot_position_t *right)
 {
-    Foot_position_t pos = { 0.0f, OFF_SQUAT_Y };
+    (void)sensor;
+    (void)left;
+    (void)right;
 
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    if (g_cycle >= SQUAT_CYCLES) {
-        reset_balance();
-        enter_state(JUMP_PUSH);
+    if (g_cycle >= STABILIZE_DURATION) {
+        enter_state(JUMP_SQUAT);
     }
 }
 
-/* ── PUSH: 全力蹬地, 直到离地 ── */
-static void run_push(const Sensor_data_t *sensor,
-                     Motor_cmd_duty_t *motor_cmd)
+/* ── SQUAT: 下蹲蓄力 (着地, ~400ms) ──
+ *   leg_cmd_solve 照常运行 (提供 X 基准).
+ *   Y = 基线(含roll补偿) + 收腿偏移, 保留重心不对称.
+ */
+static void run_squat(const Sensor_data_t *sensor,
+                      Foot_position_t *left, Foot_position_t *right)
 {
-    Foot_position_t pos = { 0.0f, OFF_PUSH_Y };
+    (void)sensor;
 
     if (g_cycle == 1) {
-        /* 拉高 kp + ki, 全力推 */
-        g_leg_left_pid.front.kp  = 10000.0f;
-        g_leg_left_pid.front.ki  = 50.0f;
-        g_leg_left_pid.back.kp   = 10000.0f;
-        g_leg_left_pid.back.ki   = 50.0f;
-        g_leg_right_pid.front.kp = 10000.0f;
-        g_leg_right_pid.front.ki = 50.0f;
-        g_leg_right_pid.back.kp  = 10000.0f;
-        g_leg_right_pid.back.ki  = 50.0f;
-        pid_reset(&g_leg_left_pid.front);
-        pid_reset(&g_leg_left_pid.back);
-        pid_reset(&g_leg_right_pid.front);
-        pid_reset(&g_leg_right_pid.back);
+        g_base_y_left  = left->y;   /* 捕获 leg_cmd_solve 的 roll 补偿基线 */
+        g_base_y_right = right->y;
     }
 
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
+    float t = (float)g_cycle / (float)SQUAT_DURATION;
+    if (t > 1.0f) t = 1.0f;
+    float dy = lerp(0.0f, JUMP_SQUAT_Y, t);
 
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
+    left->y  = g_base_y_left  + dy;
+    right->y = g_base_y_right + dy;
 
-    /* 离地: accel_z 掉到接近 0 */
+    if (g_cycle >= SQUAT_DURATION) {
+        enter_state(JUMP_LAUNCH);
+    }
+}
+
+/* ── LAUNCH: 蹬地 (着地, max ~200ms) ──
+ *   leg_cmd_solve 照常运行. 平衡照常运行.
+ *   叠加: 腿 Y 从 squat 渐变到 PUSH (50ms 渐变, 给平衡环反应时间).
+ *        腿 X 加对称前向偏置 JUMP_FORWARD_BIAS.
+ *   腿 PID 临时拉高增益.
+ *   退出: |accel_z| < 0.3g (离地) 或超时. 离地时复位平衡 PID.
+ */
+static void run_launch(const Sensor_data_t *sensor,
+                       Foot_position_t *left, Foot_position_t *right)
+{
+    if (g_cycle == 1) {
+        g_air_x_left  = left->x;   /* 捕获纯 leg_cmd 重心补偿, 不含 FORWARD_BIAS */
+        g_air_x_right = right->x;
+        leg_pid_set_launch_gains();
+    }
+
+    /* 腿 Y: 50ms 渐变, 基线 + 蹬地偏移 */
+    float ramp_t = (float)g_cycle / (float)LAUNCH_RAMP_MS;
+    if (ramp_t > 1.0f) ramp_t = 1.0f;
+    float dy = lerp(JUMP_SQUAT_Y, JUMP_PUSH_Y, ramp_t);
+
+    left->x  += JUMP_FORWARD_BIAS;
+    right->x += JUMP_FORWARD_BIAS;
+    left->y  = g_base_y_left  + dy;
+    right->y = g_base_y_right + dy;
+
+    /* 离地检测: 80ms 后启用 */
     bool airborne = false;
     if (g_cycle > 80) {
         airborne = (fabsf(sensor->accel_z) < ACCEL_FREEFALL_THRESHOLD);
     }
 
-    if (airborne || g_cycle >= PUSH_TIMEOUT_CYCLES) {
-        /* 恢复 kp, 收 ki, 收腿过渡在 FLY_UP 里做 */
-        g_leg_left_pid.front.kp  = 1200.0f;
-        g_leg_left_pid.front.ki  = 0.0f;
-        g_leg_left_pid.back.kp   = 1200.0f;
-        g_leg_left_pid.back.ki   = 0.0f;
-        g_leg_right_pid.front.kp = 1200.0f;
-        g_leg_right_pid.front.ki = 0.0f;
-        g_leg_right_pid.back.kp  = 1200.0f;
-        g_leg_right_pid.back.ki  = 0.0f;
-        reset_balance();
-        enter_state(JUMP_FLY_UP);
+    if (airborne || g_cycle >= LAUNCH_TIMEOUT) {
+        leg_pid_restore_nominal_gains();
+        robot_control_reset_balance_pid();
+        robot_control_reset_leg_speed_pid();
+        enter_state(JUMP_AIR_ASCEND);
     }
 }
 
-/* ── FLY_UP: 上升段, 腿从 PUSH 位收到 TUCK, 等顶点 ── */
-static void run_fly_up(const Sensor_data_t *sensor,
-                       Motor_cmd_duty_t *motor_cmd)
+/* ── AIR_ASCEND: 上升段 (空中, ~150ms) ──
+ *   airborne=true: 轮式平衡关停, leg_cmd_solve 跳过.
+ *   设置绝对足端位置: Y 从 PUSH 渐变到 TUCK (收腿过障碍).
+ *   X 保持离地瞬间捕获的重心补偿值.
+ *   退出: accel_z < APOGEE_THRESHOLD (到抛物线顶点).
+ */
+static void run_air_ascend(const Sensor_data_t *sensor,
+                           Foot_position_t *left, Foot_position_t *right)
 {
-    static float start_y = OFF_PUSH_Y;
-    float y;
-    float weight;
-
-    if (g_cycle == 1) {
-        /* 记录当前位置作为过渡起点, 从 PUSH(-400) 线性到 TUCK(85) */
-        start_y = OFF_PUSH_Y;  /* 简化: 从推地位开始 */
-    }
-
-    /* 30ms 内从 PUSH 位过渡到 TUCK */
-    float t = (float)g_cycle / 30.0f;
+    float t = (float)g_cycle / (float)TUCK_RAMP_MS;
     if (t > 1.0f) t = 1.0f;
-    y = lerp(start_y, OFF_TUCK_Y, t);
+    float y = lerp(JUMP_PUSH_Y, JUMP_TUCK_Y, t);
 
-    /* 平衡权重从 1 衰减到 0, 120ms 内 */
-    weight = 1.0f - (float)g_cycle / 120.0f;
-    if (weight < 0.0f) weight = 0.0f;
+    left->x  = g_air_x_left;
+    right->x = g_air_x_right;
+    left->y  = y;
+    right->y = y;
 
-    Foot_position_t pos = { 0.0f, y };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, weight);
-
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    /* 到顶: accel_z 降到阈值以下 */
     if (sensor->accel_z < APOGEE_THRESHOLD || g_cycle > APOGEE_TIMEOUT_MS) {
-        enter_state(JUMP_FLY_DOWN);
-    } else if (g_cycle > FLY_TIMEOUT_CYCLES) {
-        enter_state(JUMP_CUSHION);
+        enter_state(JUMP_AIR_DESCEND);
     }
 }
 
-/* ── FLY_DOWN: 下降段, 伸腿够地 → 保持 → 等触地 ── */
-static void run_fly_down(const Sensor_data_t *sensor,
-                         Motor_cmd_duty_t *motor_cmd)
+/* ── AIR_DESCEND: 下降段 (空中, max ~500ms) ──
+ *   airborne=true: 轮式平衡关停, leg_cmd_solve 跳过.
+ *   设置绝对足端位置: Y 从 TUCK 渐变到 REACH (伸腿够地).
+ *   X 保持离地瞬间捕获的重心补偿值.
+ *   退出: accel_z > 1.2g (触地冲击) 或超时.
+ *   有 15ms 冻结期防误触发.
+ */
+static void run_air_descend(const Sensor_data_t *sensor,
+                            Foot_position_t *left, Foot_position_t *right)
 {
     float y;
 
-    if (g_cycle < EXTEND_MS) {
-        /* 伸腿: TUCK(85) → REACH(-60) */
-        float t = (float)g_cycle / EXTEND_MS;
-        y = lerp(OFF_TUCK_Y, OFF_REACH_Y, t);
+    if (g_cycle < (uint16_t)REACH_RAMP_MS) {
+        float t = (float)g_cycle / (float)REACH_RAMP_MS;
+        y = lerp(JUMP_TUCK_Y, JUMP_REACH_Y, t);
     } else {
-        /* 保持伸展, 等触地 */
-        y = OFF_REACH_Y;
+        y = JUMP_REACH_Y;
     }
 
-    Foot_position_t pos = { 0.0f, y };
+    left->x  = g_air_x_left;
+    right->x = g_air_x_right;
+    left->y  = y;
+    right->y = y;
 
-    balance_with_yaw_scaled(sensor, motor_cmd, 0.0f);
-
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    /* 触地检测: accel_z 尖峰 */
-    bool impact = (sensor->accel_z > IMPACT_ACCEL) && (g_cycle > EXTEND_MS + FREEZE_MS);
+    bool impact = (sensor->accel_z > IMPACT_ACCEL)
+                  && (g_cycle > (uint16_t)(REACH_RAMP_MS + FREEZE_MS));
 
     if (impact || g_cycle > FLY_TIMEOUT_CYCLES) {
-        reset_balance();
-        enter_state(JUMP_CUSHION);
+        g_land_y0 = y;  /* 记录触地时的腿 Y */
+        robot_control_reset_leg_speed_pid();  /* 清除空中阶段残留, leg_cmd_solve 即将恢复 */
+        enter_state(JUMP_LAND);
     }
 }
 
-/* ── CUSHION: 深收 → 按住 → 慢放 ── */
-static void run_cushion(const Sensor_data_t *sensor,
-                        Motor_cmd_duty_t *motor_cmd)
+/* ── LAND: 缓冲着地 (~630ms) ──
+ *   airborne=false: 轮式平衡和 leg_cmd_solve 恢复运行.
+ *   子阶段 A (30ms):  腿 Y 从 y0 渐变到 y0 + CUSHION_DELTA (相对收腿缓冲).
+ *   子阶段 B (200ms): 保持缓冲位.
+ *   子阶段 C (400ms): 腿 Y 渐变回 0 (leg_cmd_solve 接管稳态站姿).
+ *   X 来自 leg_cmd_solve 的速度环输出 (自动刹车).
+ */
+static void run_land(const Sensor_data_t *sensor,
+                     Foot_position_t *left, Foot_position_t *right)
 {
+    (void)sensor;
     float y;
-    float forward;
-    float balance_weight;
 
-    if (g_cycle == 1) {
-        /* 拉高 kp, 快速收腿 */
-        g_leg_left_pid.front.kp  = 10000.0f;
-        g_leg_left_pid.back.kp   = 10000.0f;
-        g_leg_right_pid.front.kp = 10000.0f;
-        g_leg_right_pid.back.kp  = 10000.0f;
-        reset_balance();
-        robot_control_reset_leg_speed_pid();
-        pid_reset(&g_yaw_pid);
-        pid_reset(&g_yaw_angle_pid);
-        pid_reset(&g_leg_left_pid.front);
-        pid_reset(&g_leg_left_pid.back);
-        pid_reset(&g_leg_right_pid.front);
-        pid_reset(&g_leg_right_pid.back);
-    }
-
-    /* 腿目标: 前 30ms 从 REACH 渐变到 CUSHION, 避免突变 */
     if (g_cycle <= CUSHION_RAMP_MS) {
+        /* A: 从触地位置渐变收腿 */
         float t = (float)g_cycle / (float)CUSHION_RAMP_MS;
-        y = lerp(OFF_REACH_Y, OFF_CUSHION_Y, t);
-        forward = t;
-    } else if (g_cycle <= CUSHION_HOLD_CYCLES) {
-        /* 深收保持 */
-        y = OFF_CUSHION_Y;
-        forward = 1.0f;
+        y = lerp(g_land_y0, g_land_y0 + JUMP_CUSHION_DELTA, t);
+    } else if (g_cycle <= CUSHION_RAMP_MS + CUSHION_HOLD_MS) {
+        /* B: 保持缓冲位 */
+        y = g_land_y0 + JUMP_CUSHION_DELTA;
     } else {
-        /* 缓慢释放到标称 (0,0) */
-        float t = (float)(g_cycle - CUSHION_HOLD_CYCLES) / (float)CUSHION_RELEASE_CYCLES;
+        /* C: 渐变回 0 */
+        uint16_t rel = g_cycle - CUSHION_RAMP_MS - CUSHION_HOLD_MS;
+        float t = (float)rel / (float)CUSHION_RELEASE_MS;
         if (t > 1.0f) t = 1.0f;
-        y = lerp(OFF_CUSHION_Y, 0.0f, t);
-        forward = 1.0f - t;
+        y = lerp(g_land_y0 + JUMP_CUSHION_DELTA, 0.0f, t);
     }
 
-    /* 平衡权重: 前 50ms 从 0.2 渐变到 1.0, 避免突然全开 */
-    if (g_cycle <= BALANCE_RAMP_MS) {
-        balance_weight = 0.2f + 0.8f * (float)g_cycle / (float)BALANCE_RAMP_MS;
-    } else {
-        balance_weight = 1.0f;
-    }
+    left->y  = y;
+    right->y = y;
 
-    Foot_position_t pos = { 0.0f, y };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, balance_weight);
-    motor_cmd->left_motor_pwm  += (int)(FORWARD_PWM * forward);
-    motor_cmd->right_motor_pwm += (int)(FORWARD_PWM * forward);
-
-    if (g_cycle > CUSHION_HOLD_CYCLES) {
-        robot_control_leg_speed_feedback(sensor, &pos, &pos);
-    }
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    if (g_cycle >= CUSHION_HOLD_CYCLES + CUSHION_RELEASE_CYCLES) {
-        g_leg_left_pid.front.kp  = 1200.0f;
-        g_leg_left_pid.back.kp   = 1200.0f;
-        g_leg_right_pid.front.kp = 1200.0f;
-        g_leg_right_pid.back.kp  = 1200.0f;
-        g_jump_num++;
-        if (g_jump_num < TOTAL_JUMPS) {
-            enter_state(JUMP_INTERVAL);
-        } else {
-            enter_state(JUMP_END);
-        }
-    }
-}
-
-/* ── INTERVAL: 正常站立 ── */
-static void run_interval(const Sensor_data_t *sensor,
-                         Motor_cmd_duty_t *motor_cmd)
-{
-    Foot_position_t pos = { 0.0f, 0.0f };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-
-    robot_control_leg_speed_feedback(sensor, &pos, &pos);
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    if (g_cycle >= INTERVAL_CYCLES) {
-        reset_balance();
-        enter_state(JUMP_SQUAT);
-    }
-}
-
-/* ── END: 恢复, 然后空闲 ── */
-static void run_end(const Sensor_data_t *sensor,
-                    Motor_cmd_duty_t *motor_cmd)
-{
-    Foot_position_t pos = { 0.0f, 0.0f };
-
-    balance_with_yaw_scaled(sensor, motor_cmd, 1.0f);
-
-    leg_offset_to_joint_target(LEG_LEFT,  &pos, &g_target_left);
-    leg_offset_to_joint_target(LEG_RIGHT, &pos, &g_target_right);
-    run_leg_pid(sensor, motor_cmd);
-
-    if (g_cycle >= 500) {
+    if (g_cycle >= CUSHION_RAMP_MS + CUSHION_HOLD_MS + CUSHION_RELEASE_MS) {
         enter_state(JUMP_IDLE);
     }
 }
@@ -366,35 +284,24 @@ static void run_end(const Sensor_data_t *sensor,
 /* ======================== 公开接口 ============================= */
 
 void jump_init(void) {
-    leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
-    leg_pid_init(&g_leg_right_pid, 1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
-
-    g_state    = JUMP_IDLE;
-    g_cycle    = 0;
-    g_jump_num = 0;
-
-    g_target_left.front  = LEG_NOM_FRONT_L;
-    g_target_left.back   = LEG_NOM_BACK_L;
-    g_target_right.front = LEG_NOM_FRONT_R;
-    g_target_right.back  = LEG_NOM_BACK_R;
+    g_state   = JUMP_IDLE;
+    g_cycle   = 0;
+    g_land_y0 = 0.0f;
 }
 
 void jump_start(float target_speed) {
+    (void)target_speed;
     if (g_state == JUMP_IDLE) {
-        (void)target_speed;
-        g_jump_num = 0;
-        pid_reset(&g_leg_left_pid.front);
-        pid_reset(&g_leg_left_pid.back);
-        pid_reset(&g_leg_right_pid.front);
-        pid_reset(&g_leg_right_pid.back);
-        enter_state(JUMP_INTERVAL);
+        enter_state(JUMP_STABILIZE);
     }
 }
 
 void jump_stop(void) {
-    if (g_state != JUMP_IDLE && g_state != JUMP_END) {
-        reset_balance();
-        enter_state(JUMP_END);
+    if (g_state != JUMP_IDLE) {
+        leg_pid_restore_nominal_gains();
+        robot_control_reset_balance_pid();
+        robot_control_reset_leg_speed_pid();
+        enter_state(JUMP_IDLE);
     }
 }
 
@@ -402,21 +309,21 @@ bool jump_is_active(void) {
     return (g_state != JUMP_IDLE);
 }
 
-bool jump_is_done(void) {
-    return (g_state == JUMP_END) || (g_state == JUMP_IDLE);
+bool jump_is_airborne(void) {
+    return (g_state == JUMP_AIR_ASCEND || g_state == JUMP_AIR_DESCEND);
 }
 
-void jump_control(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cmd) {
+void jump_leg_overlay(Foot_position_t *left, Foot_position_t *right,
+                      const Sensor_data_t *sensor) {
     g_cycle++;
 
     switch (g_state) {
-    case JUMP_SQUAT:    run_squat(sensor, motor_cmd);    break;
-    case JUMP_PUSH:     run_push(sensor, motor_cmd);     break;
-    case JUMP_FLY_UP:   run_fly_up(sensor, motor_cmd);   break;
-    case JUMP_FLY_DOWN: run_fly_down(sensor, motor_cmd); break;
-    case JUMP_CUSHION:  run_cushion(sensor, motor_cmd);  break;
-    case JUMP_INTERVAL: run_interval(sensor, motor_cmd); break;
-    case JUMP_END:      run_end(sensor, motor_cmd);      break;
+    case JUMP_STABILIZE:   run_stabilize(sensor, left, right);   break;
+    case JUMP_SQUAT:       run_squat(sensor, left, right);       break;
+    case JUMP_LAUNCH:      run_launch(sensor, left, right);      break;
+    case JUMP_AIR_ASCEND:  run_air_ascend(sensor, left, right);  break;
+    case JUMP_AIR_DESCEND: run_air_descend(sensor, left, right); break;
+    case JUMP_LAND:        run_land(sensor, left, right);        break;
     case JUMP_IDLE:
     default:
         break;

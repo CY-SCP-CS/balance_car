@@ -25,6 +25,10 @@ extern PID_Controller_t g_pitch_gyro_pid;
 extern PID_Controller_t g_yaw_angle_pid;
 extern PID_Controller_t g_yaw_pid;
 
+/* 腿关节 PID (jump.c LAUNCH 阶段临时拉高增益) */
+extern Leg_PID_t g_leg_left_pid;
+extern Leg_PID_t g_leg_right_pid;
+
 void robot_control_init(void);
 
 void sensor_update(const Sensor_data_t *sensor);
@@ -40,6 +44,9 @@ void robot_control_reset_balance_pid(void);
 /* 复位腿速度环 PID 积分 (落地时清除空中积累的轮速误差) */
 void robot_control_reset_leg_speed_pid(void);
 
+/* 复位腿位置 PID (正常控制恢复时清除跳跃阶段残留的积分) */
+void robot_control_reset_leg_pid(void);
+
 /* 公共辅助: 标称位形 + 雅可比求解 → 关节目标 (供 jump.c 复用) */
 void leg_offset_to_joint_target(LegSide_t side,
     const Foot_position_t *foot_pos, Leg_Target_t *target);
@@ -54,5 +61,10 @@ float robot_control_get_y(void);
 float robot_control_get_theta(void);
 float robot_control_get_distance(void);
 float robot_control_get_yaw(void);
+
+/* 720° 原地旋转 (比赛元素, 由导航识别到外部元素后调用) */
+void robot_control_start_rotate_720(void);
+bool robot_control_rotate_720_is_done(void);
+void robot_control_reset_rotate_720(void);
 
 #endif /* ROBOT_CONTROL_H */
