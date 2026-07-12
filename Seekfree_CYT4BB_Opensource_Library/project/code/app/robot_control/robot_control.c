@@ -1,4 +1,5 @@
 #include "robot_control.h"
+#include "track_elements.h"
 #include "small_driver_uart_control.h"
 #include "jump.h"
 #include "../../lib/pid/pid_calculate.h"
@@ -52,47 +53,6 @@ PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 
-/* ==================== 720° 原地旋转 (比赛元素) ==================== */
-
-#define ROTATE720_SPEED     (2.0f * M_PI)   /* 360°/s */
-#define ROTATE720_TARGET    (4.0f * M_PI)   /* 720° = 4π rad */
-#define ROTATE720_MARGIN    (0.4f * M_PI)   /* 10% 冗余 ≈ 72° */
-
-typedef enum {
-    ROTATE720_IDLE = 0,
-    ROTATE720_ACTIVE,
-    ROTATE720_DONE
-} Rotate720State_t;
-
-static Rotate720State_t g_rotate720_state = ROTATE720_IDLE;
-static float            g_rotate720_accum = 0.0f;  /* 累积绝对转角 (rad) */
-static float            g_rotate720_target = 0.0f; /* 持续递增的目标角度, 不归一化 */
-
-/* ─── 720° 旋转公开接口 ─── */
-
-void robot_control_start_rotate_720(void)
-{
-    if (g_rotate720_state == ROTATE720_IDLE) {
-        g_rotate720_state = ROTATE720_ACTIVE;
-        g_rotate720_accum = 0.0f;
-        /* g_rotate720_target 在 control_task 首周期用当前 yaw 初始化 */
-        pid_reset(&g_yaw_pid);
-        pid_reset(&g_yaw_angle_pid);
-    }
-}
-
-bool robot_control_rotate_720_is_done(void)
-{
-    return (g_rotate720_state == ROTATE720_DONE);
-}
-
-void robot_control_reset_rotate_720(void)
-{
-    g_rotate720_state = ROTATE720_IDLE;
-    g_rotate720_accum = 0.0f;
-}
-
-
 void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
@@ -135,6 +95,9 @@ void robot_control_init(void){
 #endif
 
     jump_init();
+    track_rotate720_init();
+    track_bridge_climb_init();
+    track_bumpy_init();
 
 }
 
@@ -273,7 +236,8 @@ void control_task(void){
     Move_cmd_t     cmd_local   = g_move_cmd;
 
     if (!safety_check(&sensor_local, &g_motor_cmd)) {
-      
+        /* 安全停机时恢复腿增益 (防止颠簸路段增益残留) */
+        track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
         return;
     }
 
@@ -284,25 +248,21 @@ void control_task(void){
         pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
             &g_pitch_gyro_pid, &g_motor_cmd);
 
-        /* ── 720° 原地旋转: 持续递增目标角度, 复用现有 yaw 串级 ── */
-        if (g_rotate720_state == ROTATE720_ACTIVE) {
-            /* 首周期用当前 yaw 初始化移动目标 */
-            if (g_rotate720_accum == 0.0f) {
-                g_rotate720_target = sensor_local.angle_yaw;
-            }
-            /* 每周期递增, 不归一化 — yaw 误差归一化逻辑会处理角度回绕 */
-            g_rotate720_target += ROTATE720_SPEED * ROBOT_CONTROL_DT;
-            cmd_local.target_direction = g_rotate720_target;
+        /* ── 单边桥/爬坡速度覆盖 (leg_cmd_solve 之前) ── */
+        track_bridge_climb_apply(&cmd_local);
 
-            /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
-            g_rotate720_accum += fabsf(sensor_local.gyro_yaw) * ROBOT_CONTROL_DT;
+        /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
+        track_rotate720_update(&sensor_local, &cmd_local);
 
-            if (g_rotate720_accum >= ROTATE720_TARGET + ROTATE720_MARGIN) {
-                g_rotate720_state = ROTATE720_DONE;
+        /* 旋转完成时复位 yaw PID, 锁定当前朝向 */
+        {
+            static bool was_rotate720_done = false;
+            bool is_done = track_rotate720_is_done();
+            if (is_done && !was_rotate720_done) {
                 pid_reset(&g_yaw_angle_pid);
                 pid_reset(&g_yaw_pid);
-                /* 复位后正常 yaw 串级会锁定当前位置 */
             }
+            was_rotate720_done = is_done;
         }
 
         /* 差速转向: 串级控制 (外环角度, 内环角速度), 直接使用 target_direction */
@@ -332,7 +292,8 @@ void control_task(void){
         }
 
         /* 自动压弯: 根据 yaw rate 计算 body roll, 转弯时内侧下沉 */
-        {
+        /* 旋转时由 track_rotate720_update 设置增强系数, 此处跳过 */
+        if (!track_rotate720_is_active()) {
             float roll_from_turn = -0.2f * sensor_local.gyro_yaw / MAX_YAW_RATE;
             cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
         }
@@ -346,6 +307,17 @@ void control_task(void){
 
     /* ── 足端位置计算 ── */
     if (!airborne) {
+        /* 颠簸路段: 极慢速度 */
+        if (track_bumpy_is_active()) {
+            cmd_local.target_speed = 0.2f;
+        }
+        /* 起跳前自稳+下蹲: 保持前向接近速度, 蹬地和着地阶段不干预 */
+        if (jump_is_stabilizing() || jump_is_squatting()) {
+            float app_speed = jump_get_approach_speed();
+            if (app_speed != 0.0f) {
+                cmd_local.target_speed = app_speed;
+            }
+        }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
     } else {
@@ -360,6 +332,13 @@ void control_task(void){
         jump_leg_overlay(&foot_position_left, &foot_position_right, &sensor_local);
     }
 
+    /* ── 颠簸路段: 收腿提高离地间隙 ── */
+    if (track_bumpy_is_active()) {
+        float y_clear = track_bumpy_get_clearance_offset();
+        foot_position_left.y  += y_clear;
+        foot_position_right.y += y_clear;
+    }
+
     /* ── 腿控制 ── */
 #if USE_VMC
     /* ── VMC 方案（修复了角度偏置/符号/目标计算） ── */
@@ -367,6 +346,19 @@ void control_task(void){
                     &foot_position_left, &foot_position_right,
                     &g_motor_cmd);
 #else
+    /* ── 颠簸路段: 腿增益调整为软悬挂 ── */
+    {
+        static bool was_bumpy = false;
+        bool is_bumpy = track_bumpy_is_active();
+        if (is_bumpy) {
+            track_bumpy_apply_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
+        } else if (was_bumpy) {
+            /* 仅在退出颠簸路段时恢复一次, 避免每周期覆盖 jump 的 launch 增益 */
+            track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
+        }
+        was_bumpy = is_bumpy;
+    }
+
     leg_offset_to_joint_target(LEG_LEFT,  &foot_position_left,  &g_leg_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &foot_position_right, &g_leg_target_right);
 

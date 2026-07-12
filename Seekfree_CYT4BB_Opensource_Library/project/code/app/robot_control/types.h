@@ -100,8 +100,8 @@ typedef struct
 #define MAX_YAW_RATE            20.0f    /* 最大目标偏航角速度 (rad/s) */
 
 /* 安全保护阈值 */
-#define SAFE_PITCH_MAX_DEG   45.0f      /* 俯仰角保护 (deg) */
-#define SAFE_ROLL_MAX_DEG    35.0f      /* 横滚角保护 (deg) */
+#define SAFE_PITCH_MAX_DEG   55.0f      /* 俯仰角保护 (deg) */
+#define SAFE_ROLL_MAX_DEG    45.0f      /* 横滚角保护 (deg) */
 #define SAFE_JOINT_MAX_RAD   2.705f     /* 关节最大转角 = 155° (rad, 相对限位, 物理极限约 156°) */
 
 #endif /* TYPES_H */

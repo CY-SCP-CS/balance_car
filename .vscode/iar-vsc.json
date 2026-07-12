@@ -1,0 +1,16 @@
+{
+  "workspace": {
+    "path": "${workspaceFolder}\\Seekfree_CYT4BB_Opensource_Library\\project\\iar\\cyt4bb7.eww"
+  },
+  "workspaces": {
+    "${workspaceFolder}\\Seekfree_CYT4BB_Opensource_Library\\project\\iar\\cyt4bb7.eww": {
+      "configs": {
+        "${workspaceFolder}\\Seekfree_CYT4BB_Opensource_Library\\project\\iar\\project_config\\cyt4bb7_cm_7_0.ewp": "Debug",
+        "${workspaceFolder}\\Seekfree_CYT4BB_Opensource_Library\\project\\iar\\project_config\\cyt4bb7_cm_7_1.ewp": "Debug"
+      },
+      "selected": {
+        "path": "${workspaceFolder}\\Seekfree_CYT4BB_Opensource_Library\\project\\iar\\project_config\\cyt4bb7_cm_7_0.ewp"
+      }
+    }
+  }
+}

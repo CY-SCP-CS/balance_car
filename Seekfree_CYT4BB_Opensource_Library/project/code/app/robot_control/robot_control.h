@@ -6,6 +6,7 @@
 #include "../../control/leg/vmc_calculate.h"
 #include "../../control/balance/pitch_balance.h"
 #include "../../lib/pid/pid_calculate.h"
+#include "track_elements.h"
 
 extern Motor_cmd_duty_t g_motor_cmd;
 
@@ -61,10 +62,5 @@ float robot_control_get_y(void);
 float robot_control_get_theta(void);
 float robot_control_get_distance(void);
 float robot_control_get_yaw(void);
-
-/* 720° 原地旋转 (比赛元素, 由导航识别到外部元素后调用) */
-void robot_control_start_rotate_720(void);
-bool robot_control_rotate_720_is_done(void);
-void robot_control_reset_rotate_720(void);
 
 #endif /* ROBOT_CONTROL_H */
