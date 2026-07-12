@@ -9,8 +9,19 @@
 #include "zf_device_mt9v03x.h"
 #include "../../app/vision/vision_annotate.h"
 
+#define REMOTE_CAMERA_SEND_INTERVAL_TICKS  5u
+
+typedef enum {
+    REMOTE_LINK_INIT = 0,
+    REMOTE_LINK_WIFI_FAILED,
+    REMOTE_LINK_SOCKET_FAILED,
+    REMOTE_LINK_READY,
+} Remote_Link_State_t;
+
 /* Annotated image buffer — same size as camera frame */
 static uint8 g_annotated_image[MT9V03X_H][MT9V03X_W];
+static volatile Remote_Link_State_t g_remote_link_state = REMOTE_LINK_INIT;
+static uint8 g_camera_send_tick;
 
 static void page_remote_prepare_image(const UI_Frame_t *frame)
 {
@@ -26,8 +37,16 @@ static void page_remote_prepare_image(const UI_Frame_t *frame)
 
 void page_remote_init(void)
 {
-    wifi_spi_init(REMOTE_WIFI_SSID, REMOTE_WIFI_PASSWORD);
-    wifi_spi_socket_connect("TCP", REMOTE_TARGET_IP, REMOTE_TARGET_PORT, REMOTE_LOCAL_PORT);
+    if (wifi_spi_init(REMOTE_WIFI_SSID, REMOTE_WIFI_PASSWORD)) {
+        g_remote_link_state = REMOTE_LINK_WIFI_FAILED;
+        zf_log(0, "Remote WiFi init failed.");
+    } else if (wifi_spi_socket_connect("TCP", REMOTE_TARGET_IP, REMOTE_TARGET_PORT, REMOTE_LOCAL_PORT)) {
+        g_remote_link_state = REMOTE_LINK_SOCKET_FAILED;
+        zf_log(0, "Remote TCP connect failed.");
+    } else {
+        g_remote_link_state = REMOTE_LINK_READY;
+        zf_log(0, "Remote link ready.");
+    }
 
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIFI_SPI);
 
@@ -53,9 +72,18 @@ static void apply_remote_params(void)
 
 void page_remote_update(const UI_Frame_t *frame)
 {
+    if (g_remote_link_state != REMOTE_LINK_READY) {
+        return;
+    }
+
     apply_remote_params();
-    page_remote_prepare_image(frame);
-    seekfree_assistant_camera_send();
+
+    g_camera_send_tick++;
+    if (g_camera_send_tick >= REMOTE_CAMERA_SEND_INTERVAL_TICKS) {
+        g_camera_send_tick = 0u;
+        page_remote_prepare_image(frame);
+        seekfree_assistant_camera_send();
+    }
 
     const Ctrl_Input_t    *fb         = frame->fb;
     const Nav_Output_t    *nav_output = frame->nav_output;
