@@ -7,7 +7,7 @@
 
 #define REMOTE_WIFI_SSID        "BNGU"
 #define REMOTE_WIFI_PASSWORD    "12345678"
-#define REMOTE_TARGET_IP        "192.168.1.106"
+#define REMOTE_TARGET_IP        "192.168.1.102"
 #define REMOTE_TARGET_PORT      "8086"
 #define REMOTE_LOCAL_PORT       "6666"
 
