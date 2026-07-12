@@ -65,12 +65,12 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_info_init();
-    zf_log(0, "CM7_1 booted.");
 
     while (g_wifi_core0_ready != WIFI_CORE0_READY_MAGIC) {
         SCB_InvalidateDCache_by_Addr((uint32 *)&g_wifi_core0_ready, 32u);
         system_delay_ms(1);
     }
+    zf_log(0, "CM7_1 booted.");
     zf_log(0, "CM7_1 saw core0 ready.");
 
     remote_debug_init();
