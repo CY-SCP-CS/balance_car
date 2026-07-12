@@ -37,6 +37,8 @@ static void test_debug_line(const char *str)
 
 int main(void)
 {
+    uint32 camera_frame_count = 0u;
+    uint32 last_camera_frame_count = 0u;
     uint32 last_core1_status = 0xFFFFFFFFu;
 
     g_wifi_core0_ready = 0u;
@@ -45,6 +47,14 @@ int main(void)
     debug_init();
 
     test_debug_line("WiFi SPI core1 test boot.");
+
+    test_debug_line("Camera init start.");
+    if (mt9v03x_init()) {
+        test_debug_line("Camera init failed.");
+    } else {
+        test_debug_line("Camera init OK.");
+    }
+
     g_wifi_core0_ready = WIFI_CORE0_READY_MAGIC;
     SCB_CleanDCache_by_Addr((uint32 *)&g_wifi_core0_ready, 32u);
 
@@ -52,6 +62,11 @@ int main(void)
 
     while(true)
     {
+        if (mt9v03x_finish_flag) {
+            mt9v03x_finish_flag = 0u;
+            camera_frame_count++;
+        }
+
         SCB_InvalidateDCache_by_Addr((uint32 *)&g_wifi_core1_status, 32u);
         if (last_core1_status != g_wifi_core1_status) {
             last_core1_status = g_wifi_core1_status;
@@ -70,6 +85,14 @@ int main(void)
                 break;
             }
         }
+
+        if (last_camera_frame_count != camera_frame_count) {
+            last_camera_frame_count = camera_frame_count;
+            test_debug_line("Camera frame updating.");
+        } else {
+            test_debug_line("Camera no new frame.");
+        }
+
         test_debug_line("Core0 alive.");
         system_delay_ms(1000);
     }
