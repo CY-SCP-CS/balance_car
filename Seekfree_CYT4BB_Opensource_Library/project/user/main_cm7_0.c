@@ -40,8 +40,7 @@ int main(void)
     g_wifi_core0_ready = WIFI_CORE0_READY_MAGIC;
     SCB_CleanDCache_by_Addr((uint32 *)&g_wifi_core0_ready, 32u);
 
-    test_debug_line("Core0 ready, starting CM7_1.");
-    Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
+    test_debug_line("Core0 ready, CM7_1 is debugger-managed.");
 
     while(true)
     {
