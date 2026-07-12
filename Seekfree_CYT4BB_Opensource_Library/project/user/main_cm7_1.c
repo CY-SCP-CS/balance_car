@@ -38,9 +38,20 @@
 #include "../code/hmi/ui/ui_manager.h"
 
 #define WIFI_CORE0_READY_MAGIC 0x57494649u
+#define WIFI_CORE1_STATUS_BOOTED        1u
+#define WIFI_CORE1_STATUS_SAW_READY     2u
+#define WIFI_CORE1_STATUS_REMOTE_INIT   3u
 
 #pragma location = 0x28006C00
 __no_init volatile uint32 g_wifi_core0_ready;
+#pragma location = 0x28006C20
+__no_init volatile uint32 g_wifi_core1_status;
+
+static void core1_set_status(uint32 status)
+{
+    g_wifi_core1_status = status;
+    SCB_CleanDCache_by_Addr((uint32 *)&g_wifi_core1_status, 32u);
+}
 
 // CM7_1 runs the remote debug UI.
 // Runtime state can be filled from CM7_0 through shared memory/IPC later.
@@ -65,16 +76,19 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_info_init();
+    core1_set_status(WIFI_CORE1_STATUS_BOOTED);
 
     while (g_wifi_core0_ready != WIFI_CORE0_READY_MAGIC) {
         SCB_InvalidateDCache_by_Addr((uint32 *)&g_wifi_core0_ready, 32u);
         system_delay_ms(1);
     }
+    core1_set_status(WIFI_CORE1_STATUS_SAW_READY);
     zf_log(0, "CM7_1 booted.");
     zf_log(0, "CM7_1 saw core0 ready.");
 
     remote_debug_init();
     interrupt_global_enable(0);
+    core1_set_status(WIFI_CORE1_STATUS_REMOTE_INIT);
 
     ui_core1_task();
 

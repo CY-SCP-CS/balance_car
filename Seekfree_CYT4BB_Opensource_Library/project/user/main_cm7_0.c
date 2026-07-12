@@ -18,9 +18,14 @@
 #define WIFI_SPI_CORE1_TEST 1
 
 #define WIFI_CORE0_READY_MAGIC 0x57494649u
+#define WIFI_CORE1_STATUS_BOOTED        1u
+#define WIFI_CORE1_STATUS_SAW_READY     2u
+#define WIFI_CORE1_STATUS_REMOTE_INIT   3u
 
 #pragma location = 0x28006C00
 __no_init volatile uint32 g_wifi_core0_ready;
+#pragma location = 0x28006C20
+__no_init volatile uint32 g_wifi_core1_status;
 
 #if WIFI_SPI_CORE1_TEST
 
@@ -32,7 +37,10 @@ static void test_debug_line(const char *str)
 
 int main(void)
 {
+    uint32 last_core1_status = 0xFFFFFFFFu;
+
     g_wifi_core0_ready = 0u;
+    g_wifi_core1_status = 0u;
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
 
@@ -44,6 +52,24 @@ int main(void)
 
     while(true)
     {
+        SCB_InvalidateDCache_by_Addr((uint32 *)&g_wifi_core1_status, 32u);
+        if (last_core1_status != g_wifi_core1_status) {
+            last_core1_status = g_wifi_core1_status;
+            switch (g_wifi_core1_status) {
+            case WIFI_CORE1_STATUS_BOOTED:
+                test_debug_line("Core1 status: booted.");
+                break;
+            case WIFI_CORE1_STATUS_SAW_READY:
+                test_debug_line("Core1 status: saw core0 ready.");
+                break;
+            case WIFI_CORE1_STATUS_REMOTE_INIT:
+                test_debug_line("Core1 status: remote init.");
+                break;
+            default:
+                test_debug_line("Core1 status: idle.");
+                break;
+            }
+        }
         test_debug_line("Core0 alive.");
         system_delay_ms(1000);
     }
