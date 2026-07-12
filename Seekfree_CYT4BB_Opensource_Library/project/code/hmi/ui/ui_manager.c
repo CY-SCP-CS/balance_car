@@ -5,7 +5,7 @@
 #include "page_nav_debug.h"
 
 #ifndef UI_ENABLE_REMOTE_PAGE
-#define UI_ENABLE_REMOTE_PAGE 0
+#define UI_ENABLE_REMOTE_PAGE 1
 #endif
 
 #if UI_ENABLE_REMOTE_PAGE
