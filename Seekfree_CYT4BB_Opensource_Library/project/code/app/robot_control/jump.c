@@ -21,13 +21,13 @@ typedef enum {
 #define JUMP_PUSH_Y        -400.0f   /* 蹬地伸腿 (饱和在关节限位) */
 #define JUMP_TUCK_Y          80.0f   /* 空中收腿 */
 #define JUMP_REACH_Y        -60.0f   /* 空中伸腿够地 */
-#define JUMP_CUSHION_DELTA   100.0f   /* 落地相对缓冲深度 */
+#define JUMP_CUSHION_DELTA   90.0f   /* 落地相对缓冲深度 */
 
 /* 前向推进 */
-#define JUMP_FORWARD_BIAS   -30.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
+#define JUMP_FORWARD_BIAS   -90.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
 
 /* 时序 (1kHz cycles) */
-#define STABILIZE_DURATION    3000    /* 起跳前自稳 3 秒 */
+#define STABILIZE_DURATION    1500    /* 起跳前自稳 3 秒 */
 #define SQUAT_DURATION        400
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
 #define LAUNCH_TIMEOUT        200
@@ -56,6 +56,7 @@ typedef enum {
 
 static JumpState_t  g_state    = JUMP_IDLE;
 static uint16_t     g_cycle    = 0;
+static float        g_approach_speed = 0.0f;  /* jump_start 传入的前向速度 */
 
 /* LAND: 触地时记录的腿 Y 位置, 用于相对缓冲 */
 static float g_land_y0 = 0.0f;
@@ -170,7 +171,7 @@ static void run_launch(const Sensor_data_t *sensor,
     float dy = lerp(JUMP_SQUAT_Y, JUMP_PUSH_Y, ramp_t);
 
     left->x  += JUMP_FORWARD_BIAS;
-    right->x += JUMP_FORWARD_BIAS;
+    right->x -= JUMP_FORWARD_BIAS;
     left->y  = g_base_y_left  + dy;
     right->y = g_base_y_right + dy;
 
@@ -290,8 +291,8 @@ void jump_init(void) {
 }
 
 void jump_start(float target_speed) {
-    (void)target_speed;
     if (g_state == JUMP_IDLE) {
+        g_approach_speed = target_speed;
         enter_state(JUMP_STABILIZE);
     }
 }
@@ -311,6 +312,22 @@ bool jump_is_active(void) {
 
 bool jump_is_airborne(void) {
     return (g_state == JUMP_AIR_ASCEND || g_state == JUMP_AIR_DESCEND);
+}
+
+bool jump_is_launching(void) {
+    return (g_state == JUMP_LAUNCH);
+}
+
+bool jump_is_stabilizing(void) {
+    return (g_state == JUMP_STABILIZE);
+}
+
+bool jump_is_squatting(void) {
+    return (g_state == JUMP_SQUAT);
+}
+
+float jump_get_approach_speed(void) {
+    return g_approach_speed;
 }
 
 void jump_leg_overlay(Foot_position_t *left, Foot_position_t *right,

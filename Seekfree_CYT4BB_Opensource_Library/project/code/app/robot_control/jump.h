@@ -30,6 +30,23 @@ bool jump_is_active(void);    /* 跳跃状态机是否正在运行 */
  */
 bool jump_is_airborne(void);
 
+/* ─── 是否正在蹬地阶段 ───
+ *  JUMP_LAUNCH 返回 true, 其余返回 false.
+ *  调用者可在 LAUNCH 期间设置前向目标速度, 帮助向前位移.
+ */
+bool jump_is_launching(void);
+
+/* ─── 是否在起跳前自稳阶段 ── */
+bool jump_is_stabilizing(void);
+
+/* ─── 是否在下蹲蓄力阶段 ── */
+bool jump_is_squatting(void);
+
+/* ─── 获取起跳前的前向接近速度 ───
+ *  返回 jump_start() 传入的 target_speed, 调用者在 STABILIZE 阶段施加.
+ */
+float jump_get_approach_speed(void);
+
 /* ─── 跳跃腿轨迹叠加 (每周期调用, 放入 control_task) ───
  *  在 leg_cmd_solve 之后调用, 叠加跳跃 Y 轨迹和 X 偏置到足端位置。
  *  不写电机 PWM, 只修改足端位置。

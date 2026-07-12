@@ -11,6 +11,7 @@
 #include "../code/app/remote/remote_comm.h"
 #include "../code/app/remote/remote_debug.h"
 #include "../code/app/robot_control/jump.h"
+#include "../code/app/robot_control/track_elements.h"
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
@@ -64,7 +65,8 @@ int main(void)
     }
     zf_log(0, "Angle calibration OK.");
 
-    jump_start(0.0f);   // 测试跳跃
+    track_rotate720_start();   // 测试旋转720
+    // jump_start(-0.1f);
 
     while(true)
     {
@@ -86,6 +88,43 @@ int main(void)
             if (route_state.mode == NAV_ROUTE_REPLAYING) {
                 Nav_Output_t nav_out = nav_route_replay_update(&g_nav_input);
                 nav_apply_ctrl(&g_ctrl, &nav_out);
+
+                /* ── 赛道元素区域响应 ── */
+                if (nav_out.region_entered) {
+                    switch (nav_out.region) {
+                    case NAV_REGION_ROTATE:
+                        track_rotate720_start();
+                        break;
+                    case NAV_REGION_JUMP:
+                        jump_start(0.0f);
+                        break;
+                    case NAV_REGION_SINGLE_BRIDGE:
+                    case NAV_REGION_UPHILL:
+                        track_bridge_climb_activate();
+                        break;
+                    case NAV_REGION_SPEED_BUMP:
+                        track_bumpy_activate();
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                if (nav_out.region_exited) {
+                    switch (nav_out.region) {
+                    case NAV_REGION_SINGLE_BRIDGE:
+                    case NAV_REGION_UPHILL:
+                        track_bridge_climb_deactivate();
+                        break;
+                    case NAV_REGION_SPEED_BUMP:
+                        track_bumpy_deactivate();
+                        break;
+                    case NAV_REGION_ROTATE:
+                        track_rotate720_reset();
+                        break;
+                    default:
+                        break;
+                    }
+                }
             }
         }
 
