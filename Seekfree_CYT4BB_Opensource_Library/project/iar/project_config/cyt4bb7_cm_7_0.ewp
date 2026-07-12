@@ -1195,6 +1195,12 @@
                     <name>$PROJ_DIR$\..\..\code\app\robot_control\small_driver_uart_control.h</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\track_elements.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\robot_control\track_elements.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\robot_control\types.h</name>
                 </file>
             </group>
