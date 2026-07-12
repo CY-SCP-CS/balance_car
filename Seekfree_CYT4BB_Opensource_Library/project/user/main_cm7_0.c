@@ -65,7 +65,7 @@ int main(void)
     }
     zf_log(0, "Angle calibration OK.");
 
-    track_rotate720_start();   // 测试旋转720
+    //track_rotate720_start();   // 测试旋转720
     // jump_start(-0.1f);
 
     while(true)
