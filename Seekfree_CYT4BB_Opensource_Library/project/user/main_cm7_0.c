@@ -15,6 +15,75 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
+#define WIFI_SPI_STANDALONE_TEST 1
+
+#define WIFI_TEST_SSID          "BNGU"
+#define WIFI_TEST_PASSWORD      "12345678"
+#define WIFI_TEST_TARGET_IP     "192.168.1.102"
+#define WIFI_TEST_TARGET_PORT   "8086"
+#define WIFI_TEST_LOCAL_PORT    "6666"
+
+#if WIFI_SPI_STANDALONE_TEST
+
+static void test_debug_line(const char *str)
+{
+    debug_send_buffer((const uint8 *)str, (uint32)strlen(str));
+    debug_send_buffer((const uint8 *)"\r\n", 2u);
+}
+
+static void test_debug_label_value(const char *label, const char *value)
+{
+    debug_send_buffer((const uint8 *)label, (uint32)strlen(label));
+    debug_send_buffer((const uint8 *)value, (uint32)strlen(value));
+    debug_send_buffer((const uint8 *)"\r\n", 2u);
+}
+
+int main(void)
+{
+    uint8 state;
+
+    clock_init(SYSTEM_CLOCK_250M);
+    debug_init();
+
+    test_debug_line("WiFi SPI standalone test boot.");
+    test_debug_line("WiFi SPI init start.");
+
+    state = wifi_spi_init(WIFI_TEST_SSID, WIFI_TEST_PASSWORD);
+    if(state)
+    {
+        test_debug_line("WiFi SPI init failed.");
+        while(true)
+        {
+            system_delay_ms(1000);
+        }
+    }
+
+    test_debug_line("WiFi SPI init OK.");
+    test_debug_label_value("version: ", wifi_spi_version);
+    test_debug_label_value("mac: ", wifi_spi_mac_addr);
+    test_debug_label_value("ip: ", wifi_spi_ip_addr_port);
+
+    test_debug_line("WiFi TCP connect start.");
+    state = wifi_spi_socket_connect("TCP", WIFI_TEST_TARGET_IP, WIFI_TEST_TARGET_PORT, WIFI_TEST_LOCAL_PORT);
+    if(state)
+    {
+        test_debug_line("WiFi TCP connect failed.");
+    }
+    else
+    {
+        test_debug_line("WiFi TCP connect OK.");
+        test_debug_label_value("ip: ", wifi_spi_ip_addr_port);
+    }
+
+    while(true)
+    {
+        test_debug_line("WiFi SPI test alive.");
+        system_delay_ms(1000);
+    }
+}
+
+#else
+
 Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
 static Vision_Result_t g_vision;
@@ -29,8 +98,7 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
-    Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
-    zf_log(0, "CM7_1 start requested.");
+
     remote_debug_init();
 
     if(!imu_init())
@@ -137,3 +205,5 @@ int main(void)
 
     }
 }
+
+#endif
