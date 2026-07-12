@@ -60,6 +60,7 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_info_init();
+    zf_log(0, "CM7_1 booted.");
     remote_debug_init();
     interrupt_global_enable(0);
 

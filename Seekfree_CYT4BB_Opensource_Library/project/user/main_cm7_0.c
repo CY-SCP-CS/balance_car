@@ -29,6 +29,8 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
+    Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
+    zf_log(0, "CM7_1 start requested.");
     remote_debug_init();
 
     if(!imu_init())
