@@ -15,6 +15,17 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
+#define CM7_0_READY_MAGIC 0x43373031u
+
+#pragma location = 0x28006C00
+__no_init volatile uint32 g_cm7_0_ready;
+
+static void cm7_0_set_ready(uint32 value)
+{
+    g_cm7_0_ready = value;
+    SCB_CleanDCache_by_Addr((uint32 *)&g_cm7_0_ready, 32u);
+}
+
 Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
 static Vision_Result_t g_vision;
@@ -27,10 +38,11 @@ Move_cmd_t g_move_cmd;
 
 int main(void)
 {
+    g_cm7_0_ready = 0u;
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
-    Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
-    zf_log(0, "CM7_1 start requested.");
+    cm7_0_set_ready(0u);
+    zf_log(0, "CM7_1 debugger-managed.");
     remote_debug_init();
 
     if(!imu_init())
@@ -41,6 +53,7 @@ int main(void)
 
     nav_init(NULL);
     vision_init();
+    cm7_0_set_ready(CM7_0_READY_MAGIC);
 
     // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。
     small_driver_uart_init();

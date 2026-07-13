@@ -37,6 +37,22 @@
 #include "../code/app/remote/remote_debug.h"
 #include "../code/hmi/ui/ui_manager.h"
 
+#define CM7_0_READY_MAGIC 0x43373031u
+
+#pragma location = 0x28006C00
+__no_init volatile uint32 g_cm7_0_ready;
+
+static void cm7_1_wait_for_cm7_0_ready(void)
+{
+    while (true) {
+        SCB_InvalidateDCache_by_Addr((uint32 *)&g_cm7_0_ready, 32u);
+        if (g_cm7_0_ready == CM7_0_READY_MAGIC) {
+            break;
+        }
+        system_delay_ms(1);
+    }
+}
+
 // CM7_1 runs the remote debug UI.
 // Runtime state can be filled from CM7_0 through shared memory/IPC later.
 static void ui_core1_task(void)
@@ -60,6 +76,7 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_info_init();
+    cm7_1_wait_for_cm7_0_ready();
     zf_log(0, "CM7_1 booted.");
     remote_debug_init();
     interrupt_global_enable(0);
