@@ -15,7 +15,11 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
-#define WIFI_SPI_CORE1_TEST 1
+#ifndef WIFI_SPI_CORE1_TEST
+#define WIFI_SPI_CORE1_TEST 0
+#endif
+
+#if WIFI_SPI_CORE1_TEST
 
 #define WIFI_CORE0_READY_MAGIC 0x57494649u
 #define WIFI_CORE1_STATUS_BOOTED        1u
@@ -26,8 +30,6 @@
 __no_init volatile uint32 g_wifi_core0_ready;
 #pragma location = 0x28006C20
 __no_init volatile uint32 g_wifi_core1_status;
-
-#if WIFI_SPI_CORE1_TEST
 
 static void test_debug_line(const char *str)
 {
@@ -114,6 +116,8 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
+    Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
+    zf_log(0, "CM7_1 start requested.");
 
     remote_debug_init();
 
