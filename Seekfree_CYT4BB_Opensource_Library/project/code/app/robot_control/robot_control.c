@@ -236,8 +236,6 @@ void control_task(void){
     Move_cmd_t     cmd_local   = g_move_cmd;
 
     if (!safety_check(&sensor_local, &g_motor_cmd)) {
-        /* 安全停机时恢复腿增益 (防止颠簸路段增益残留) */
-        track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
         return;
     }
 
@@ -253,6 +251,12 @@ void control_task(void){
 
         /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
         track_rotate720_update(&sensor_local, &cmd_local);
+
+        /* ── 颠簸路段: 交替偏航 + 单侧收腿, 单轮过条 ── */
+        if (track_bumpy_is_active()) {
+            track_bumpy_update(&sensor_local);
+            cmd_local.target_direction += track_bumpy_get_yaw_bias();
+        }
 
         /* 旋转完成时复位 yaw PID, 锁定当前朝向 */
         {
@@ -309,7 +313,7 @@ void control_task(void){
     if (!airborne) {
         /* 颠簸路段: 极慢速度 */
         if (track_bumpy_is_active()) {
-            cmd_local.target_speed = 0.2f;
+            cmd_local.target_speed = track_bumpy_get_speed();
         }
         /* 起跳前自稳+下蹲: 保持前向接近速度, 蹬地和着地阶段不干预 */
         if (jump_is_stabilizing() || jump_is_squatting()) {
@@ -332,11 +336,10 @@ void control_task(void){
         jump_leg_overlay(&foot_position_left, &foot_position_right, &sensor_local);
     }
 
-    /* ── 颠簸路段: 收腿提高离地间隙 ── */
+    /* ── 颠簸路段: 单侧收腿, 交替爬升 ── */
     if (track_bumpy_is_active()) {
-        float y_clear = track_bumpy_get_clearance_offset();
-        foot_position_left.y  += y_clear;
-        foot_position_right.y += y_clear;
+        foot_position_left.y  += track_bumpy_get_left_lift();
+        foot_position_right.y += track_bumpy_get_right_lift();
     }
 
     /* ── 腿控制 ── */
@@ -346,18 +349,6 @@ void control_task(void){
                     &foot_position_left, &foot_position_right,
                     &g_motor_cmd);
 #else
-    /* ── 颠簸路段: 腿增益调整为软悬挂 ── */
-    {
-        static bool was_bumpy = false;
-        bool is_bumpy = track_bumpy_is_active();
-        if (is_bumpy) {
-            track_bumpy_apply_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
-        } else if (was_bumpy) {
-            /* 仅在退出颠簸路段时恢复一次, 避免每周期覆盖 jump 的 launch 增益 */
-            track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
-        }
-        was_bumpy = is_bumpy;
-    }
 
     leg_offset_to_joint_target(LEG_LEFT,  &foot_position_left,  &g_leg_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &foot_position_right, &g_leg_target_right);

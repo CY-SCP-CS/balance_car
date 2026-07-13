@@ -24,11 +24,12 @@ typedef enum {
 #define JUMP_CUSHION_DELTA   90.0f   /* 落地相对缓冲深度 */
 
 /* 前向推进 */
-#define JUMP_FORWARD_BIAS   -90.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
+#define JUMP_FORWARD_BIAS   -90.0f   /* 蹬地时脚在髋后方的偏移 (mm) *///颠簸路段为0
 
 /* 时序 (1kHz cycles) */
-#define STABILIZE_DURATION    1500    /* 起跳前自稳 3 秒 */
-#define SQUAT_DURATION        400
+#define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
+#define MULTI_STABILIZE_DURATION 300    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
+#define SQUAT_DURATION          400
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
 #define LAUNCH_TIMEOUT        200
 #define TUCK_RAMP_MS           30
@@ -57,6 +58,8 @@ typedef enum {
 static JumpState_t  g_state    = JUMP_IDLE;
 static uint16_t     g_cycle    = 0;
 static float        g_approach_speed = 0.0f;  /* jump_start 传入的前向速度 */
+static uint8_t      g_jump_remaining = 0;     /* 剩余跳跃次数 */
+static uint8_t      g_jump_total     = 0;     /* 初始跳跃总次数, 用于区分首跳 */
 
 /* LAND: 触地时记录的腿 Y 位置, 用于相对缓冲 */
 static float g_land_y0 = 0.0f;
@@ -118,7 +121,12 @@ static void run_stabilize(const Sensor_data_t *sensor,
     (void)left;
     (void)right;
 
-    if (g_cycle >= STABILIZE_DURATION) {
+    /* 首跳用长自稳 (平地接近), 后续用短自稳 (台阶面积有限) */
+    uint16_t duration = (g_jump_remaining == g_jump_total)
+                        ? STABILIZE_DURATION
+                        : MULTI_STABILIZE_DURATION;
+
+    if (g_cycle >= duration) {
         enter_state(JUMP_SQUAT);
     }
 }
@@ -278,7 +286,15 @@ static void run_land(const Sensor_data_t *sensor,
     right->y = y;
 
     if (g_cycle >= CUSHION_RAMP_MS + CUSHION_HOLD_MS + CUSHION_RELEASE_MS) {
-        enter_state(JUMP_IDLE);
+        if (g_jump_remaining > 1) {
+            /* 还有剩余跳跃: 回到 STABILIZE 走完整流程, 保证每跳一致 */
+            g_jump_remaining--;
+            enter_state(JUMP_STABILIZE);
+        } else {
+            g_jump_remaining = 0;
+            g_jump_total     = 0;
+            enter_state(JUMP_IDLE);
+        }
     }
 }
 
@@ -288,11 +304,15 @@ void jump_init(void) {
     g_state   = JUMP_IDLE;
     g_cycle   = 0;
     g_land_y0 = 0.0f;
+    g_jump_remaining = 0;
+    g_jump_total     = 0;
 }
 
-void jump_start(float target_speed) {
-    if (g_state == JUMP_IDLE) {
+void jump_start(float target_speed, uint8_t count) {
+    if (g_state == JUMP_IDLE && count > 0) {
         g_approach_speed = target_speed;
+        g_jump_remaining = count;
+        g_jump_total     = count;
         enter_state(JUMP_STABILIZE);
     }
 }
@@ -302,6 +322,8 @@ void jump_stop(void) {
         leg_pid_restore_nominal_gains();
         robot_control_reset_balance_pid();
         robot_control_reset_leg_speed_pid();
+        g_jump_remaining = 0;
+        g_jump_total     = 0;
         enter_state(JUMP_IDLE);
     }
 }
@@ -324,6 +346,10 @@ bool jump_is_stabilizing(void) {
 
 bool jump_is_squatting(void) {
     return (g_state == JUMP_SQUAT);
+}
+
+uint8_t jump_get_remaining(void) {
+    return g_jump_remaining;
 }
 
 float jump_get_approach_speed(void) {
