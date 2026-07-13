@@ -15,93 +15,6 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
-#ifndef WIFI_SPI_CORE1_TEST
-#define WIFI_SPI_CORE1_TEST 0
-#endif
-
-#if WIFI_SPI_CORE1_TEST
-
-#define WIFI_CORE0_READY_MAGIC 0x57494649u
-#define WIFI_CORE1_STATUS_BOOTED        1u
-#define WIFI_CORE1_STATUS_SAW_READY     2u
-#define WIFI_CORE1_STATUS_REMOTE_INIT   3u
-
-#pragma location = 0x28006C00
-__no_init volatile uint32 g_wifi_core0_ready;
-#pragma location = 0x28006C20
-__no_init volatile uint32 g_wifi_core1_status;
-
-static void test_debug_line(const char *str)
-{
-    debug_send_buffer((const uint8 *)str, (uint32)strlen(str));
-    debug_send_buffer((const uint8 *)"\r\n", 2u);
-}
-
-int main(void)
-{
-    uint32 camera_frame_count = 0u;
-    uint32 last_camera_frame_count = 0u;
-    uint32 last_core1_status = 0xFFFFFFFFu;
-
-    g_wifi_core0_ready = 0u;
-    g_wifi_core1_status = 0u;
-    clock_init(SYSTEM_CLOCK_250M);
-    debug_init();
-
-    test_debug_line("WiFi SPI core1 test boot.");
-
-    test_debug_line("Camera init start.");
-    if (mt9v03x_init()) {
-        test_debug_line("Camera init failed.");
-    } else {
-        test_debug_line("Camera init OK.");
-    }
-
-    g_wifi_core0_ready = WIFI_CORE0_READY_MAGIC;
-    SCB_CleanDCache_by_Addr((uint32 *)&g_wifi_core0_ready, 32u);
-
-    test_debug_line("Core0 ready, CM7_1 is debugger-managed.");
-
-    while(true)
-    {
-        if (mt9v03x_finish_flag) {
-            mt9v03x_finish_flag = 0u;
-            camera_frame_count++;
-        }
-
-        SCB_InvalidateDCache_by_Addr((uint32 *)&g_wifi_core1_status, 32u);
-        if (last_core1_status != g_wifi_core1_status) {
-            last_core1_status = g_wifi_core1_status;
-            switch (g_wifi_core1_status) {
-            case WIFI_CORE1_STATUS_BOOTED:
-                test_debug_line("Core1 status: booted.");
-                break;
-            case WIFI_CORE1_STATUS_SAW_READY:
-                test_debug_line("Core1 status: saw core0 ready.");
-                break;
-            case WIFI_CORE1_STATUS_REMOTE_INIT:
-                test_debug_line("Core1 status: remote init.");
-                break;
-            default:
-                test_debug_line("Core1 status: idle.");
-                break;
-            }
-        }
-
-        if (last_camera_frame_count != camera_frame_count) {
-            last_camera_frame_count = camera_frame_count;
-            test_debug_line("Camera frame updating.");
-        } else {
-            test_debug_line("Camera no new frame.");
-        }
-
-        test_debug_line("Core0 alive.");
-        system_delay_ms(1000);
-    }
-}
-
-#else
-
 Ctrl_Input_t   g_ctrl;
 static Nav_Input_t    g_nav_input;
 static Vision_Result_t g_vision;
@@ -118,7 +31,6 @@ int main(void)
     debug_init();
     Cy_SysEnableApplCore(CORE_CM7_1, CY_CORTEX_M7_1_APPL_ADDR);
     zf_log(0, "CM7_1 start requested.");
-
     remote_debug_init();
 
     if(!imu_init())
@@ -225,5 +137,3 @@ int main(void)
 
     }
 }
-
-#endif
