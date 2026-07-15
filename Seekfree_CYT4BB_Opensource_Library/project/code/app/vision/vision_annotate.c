@@ -101,14 +101,6 @@ static void draw_cross(uint8 img[MT9V03X_H][MT9V03X_W],
 
 /* --- Mode-specific annotation ----------------------------------- */
 
-static void annotate_center_ref(uint8 img[MT9V03X_H][MT9V03X_W])
-{
-    /* Small cross at frame center — always drawn as orientation reference */
-    int16_t cr = (int16_t)(MT9V03X_H / 2u);
-    int16_t cc = (int16_t)(MT9V03X_W / 2u);
-    draw_cross(img, cr, cc, 6);
-}
-
 static void annotate_minefield(uint8 img[MT9V03X_H][MT9V03X_W],
                                 const Minefield_Result_t *mf)
 {
@@ -268,8 +260,6 @@ void vision_annotate(uint8 dst[MT9V03X_H][MT9V03X_W],
 
     /* Copy raw frame */
     (void)memcpy(dst, src, (uint32_t)MT9V03X_H * (uint32_t)MT9V03X_W);
-
-    annotate_center_ref(dst);
 
     switch (mode) {
     case VISION_MODE_MINEFIELD:

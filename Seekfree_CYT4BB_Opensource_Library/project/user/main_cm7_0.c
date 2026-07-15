@@ -53,6 +53,7 @@ int main(void)
 
     nav_init(NULL);
     vision_init();
+    vision_set_mode(VISION_MODE_MINEFIELD);
     cm7_0_set_ready(CM7_0_READY_MAGIC);
 
     // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。

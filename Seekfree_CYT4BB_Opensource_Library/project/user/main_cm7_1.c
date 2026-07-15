@@ -64,7 +64,7 @@ static void ui_core1_task(void)
     Nav_Output_t nav_output = {0};
     Nav_State_t nav_state = {0};
     Vision_Result_t vision = {0};
-    Vision_Mode_t vision_mode = VISION_MODE_LINE;
+    Vision_Mode_t vision_mode = VISION_MODE_MINEFIELD;
 
     ui_init(UI_PAGE_REMOTE);
 
