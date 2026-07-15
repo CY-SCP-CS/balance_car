@@ -1448,6 +1448,12 @@
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_internal.h</name>
                 </file>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_shared.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_shared.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\navigation\nav_route_record.c</name>
                 </file>
                 <file>

@@ -34,6 +34,7 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include "../code/app/navigation/gps_position.h"
 #include "../code/app/remote/remote_debug.h"
 #include "../code/hmi/ui/ui_manager.h"
 
@@ -57,6 +58,7 @@ static void cm7_1_wait_for_cm7_0_ready(void)
 // Runtime state can be filled from CM7_0 through shared memory/IPC later.
 static void ui_core1_task(void)
 {
+    uint32 time_ms = 0u;
     Ctrl_Input_t ctrl = {0};
     Nav_Input_t nav_input = {0};
     Nav_Output_t nav_output = {0};
@@ -67,8 +69,10 @@ static void ui_core1_task(void)
     ui_init(UI_PAGE_REMOTE);
 
     while (true) {
+        gps_position_update(time_ms);
         ui_update(&ctrl, &nav_input, &nav_output, &nav_state, &vision, vision_mode);
         system_delay_ms(10);
+        time_ms += 10u;
     }
 }
 
@@ -79,6 +83,7 @@ int main(void)
     cm7_1_wait_for_cm7_0_ready();
     zf_log(0, "CM7_1 booted.");
     remote_debug_init();
+    gps_position_init(TAU1201);
     interrupt_global_enable(0);
 
     ui_core1_task();

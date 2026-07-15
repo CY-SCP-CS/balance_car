@@ -1128,6 +1128,21 @@
                 </file>
             </group>
             <group>
+                <name>navigation</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_position.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_position.h</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_shared.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\navigation\gps_shared.h</name>
+                </file>
+            </group>
+            <group>
                 <name>vision</name>
                 <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\vision_annotate.c</name>
