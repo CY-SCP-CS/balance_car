@@ -7,9 +7,11 @@
 #include "seekfree_assistant_interface.h"
 #include "zf_device_wifi_spi.h"
 #include "zf_device_mt9v03x.h"
+#include "../../app/vision/minefield_detect.h"
 #include "../../app/vision/vision_annotate.h"
 
 #define REMOTE_CAMERA_SEND_INTERVAL_TICKS  5u
+#define REMOTE_RECONNECT_INTERVAL_TICKS    200u
 #define REMOTE_ELEMENT_BLACK_MAX           60u
 #define REMOTE_ELEMENT_WHITE_MIN           200u
 #define REMOTE_ELEMENT_MIN_AREA            18u
@@ -55,6 +57,7 @@ static uint8 g_element_visited[REMOTE_ELEMENT_VISITED_BYTES];
 static uint16 g_element_stack[MT9V03X_IMAGE_SIZE];
 static volatile Remote_Link_State_t g_remote_link_state = REMOTE_LINK_INIT;
 static uint8 g_camera_send_tick;
+static uint16 g_remote_reconnect_tick;
 
 static bool remote_element_pixel_match(uint8 px, Remote_Element_Tone_t tone)
 {
@@ -402,11 +405,17 @@ static void remote_element_detect_and_draw(uint8 dst[MT9V03X_H][MT9V03X_W],
 
 static void page_remote_prepare_image(const UI_Frame_t *frame)
 {
+    Vision_Result_t annotate_result;
+
     SCB_InvalidateDCache_by_Addr(mt9v03x_image_temp[0], MT9V03X_IMAGE_SIZE);
 
     if (frame->vision != NULL) {
+        annotate_result = *frame->vision;
+        if (frame->vision_mode == VISION_MODE_MINEFIELD) {
+            minefield_detect(mt9v03x_image_temp, &annotate_result.minefield);
+        }
         vision_annotate(g_annotated_image, mt9v03x_image_temp,
-                        frame->vision, frame->vision_mode);
+                        &annotate_result, frame->vision_mode);
     } else {
         (void)memcpy(g_annotated_image[0], mt9v03x_image_temp[0], MT9V03X_IMAGE_SIZE);
     }
@@ -414,18 +423,28 @@ static void page_remote_prepare_image(const UI_Frame_t *frame)
     remote_element_detect_and_draw(g_annotated_image, mt9v03x_image_temp);
 }
 
-void page_remote_init(void)
+static void remote_link_try_connect(bool init_wifi)
 {
-    if (wifi_spi_init(REMOTE_WIFI_SSID, REMOTE_WIFI_PASSWORD)) {
+    if (init_wifi && wifi_spi_init(REMOTE_WIFI_SSID, REMOTE_WIFI_PASSWORD)) {
         g_remote_link_state = REMOTE_LINK_WIFI_FAILED;
         zf_log(0, "Remote WiFi init failed.");
-    } else if (wifi_spi_socket_connect("TCP", REMOTE_TARGET_IP, REMOTE_TARGET_PORT, REMOTE_LOCAL_PORT)) {
+        return;
+    }
+
+    if (wifi_spi_socket_connect("TCP", REMOTE_TARGET_IP, REMOTE_TARGET_PORT, REMOTE_LOCAL_PORT)) {
         g_remote_link_state = REMOTE_LINK_SOCKET_FAILED;
         zf_log(0, "Remote TCP connect failed.");
-    } else {
-        g_remote_link_state = REMOTE_LINK_READY;
-        zf_log(0, "Remote link ready.");
+        return;
     }
+
+    g_remote_link_state = REMOTE_LINK_READY;
+    g_remote_reconnect_tick = 0u;
+    zf_log(0, "Remote link ready.");
+}
+
+void page_remote_init(void)
+{
+    remote_link_try_connect(true);
 
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIFI_SPI);
 
@@ -452,6 +471,11 @@ static void apply_remote_params(void)
 void page_remote_update(const UI_Frame_t *frame)
 {
     if (g_remote_link_state != REMOTE_LINK_READY) {
+        g_remote_reconnect_tick++;
+        if (g_remote_reconnect_tick >= REMOTE_RECONNECT_INTERVAL_TICKS) {
+            g_remote_reconnect_tick = 0u;
+            remote_link_try_connect(g_remote_link_state != REMOTE_LINK_SOCKET_FAILED);
+        }
         return;
     }
 
