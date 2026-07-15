@@ -25,6 +25,7 @@
 #define MF_MIN_FRAME_PIXELS          80u
 #define MF_MIN_AREA_DEN              5u
 #define MF_EDGE_AVG_ROWS             5u
+#define MF_MIN_WIDTH_RATIO_PERCENT   25u
 
 #define MF_BLUE_MIN_PIXELS           35u
 #define MF_BLUE_MIN_AREA_PERCENT     2u
@@ -269,8 +270,10 @@ static bool estimate_box_edges(const int16_t left_edge[MT9V03X_H],
      * approach angle.  Reject only extreme ratios, then let the blue center
      * validation decide.
      */
-    if ((int32_t)top_width * 100 < (int32_t)bottom_width * 35 ||
-        (int32_t)bottom_width * 100 < (int32_t)top_width * 35) {
+    if ((int32_t)top_width * 100 <
+            (int32_t)bottom_width * (int32_t)MF_MIN_WIDTH_RATIO_PERCENT ||
+        (int32_t)bottom_width * 100 <
+            (int32_t)top_width * (int32_t)MF_MIN_WIDTH_RATIO_PERCENT) {
         return false;
     }
 
