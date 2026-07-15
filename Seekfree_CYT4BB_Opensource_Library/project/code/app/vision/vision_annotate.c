@@ -1,81 +1,18 @@
 #include "vision_annotate.h"
 
+#include <string.h>
+
 /* --- Drawing primitives ----------------------------------------- */
 
-#define ANNOTATION_LIGHT_VALUE      255u
-#define ANNOTATION_DARK_VALUE       0u
-#define ANNOTATION_SPECKLE_DELTA    70u
-
-static inline void set_px(uint8 img[MT9V03X_H][MT9V03X_W],
-                          int16_t row, int16_t col, uint8 value)
+/* Invert a single pixel: bright→dark, dark→bright. Always visible. */
+static inline void invert_px(uint8 img[MT9V03X_H][MT9V03X_W],
+                              int16_t row, int16_t col)
 {
     if (row < 0 || row >= (int16_t)MT9V03X_H ||
         col < 0 || col >= (int16_t)MT9V03X_W) {
         return;
     }
-    img[row][col] = value;
-}
-
-static inline void draw_mark_px(uint8 img[MT9V03X_H][MT9V03X_W],
-                                int16_t row, int16_t col)
-{
-    set_px(img, (int16_t)(row - 1), col, ANNOTATION_DARK_VALUE);
-    set_px(img, (int16_t)(row + 1), col, ANNOTATION_DARK_VALUE);
-    set_px(img, row, (int16_t)(col - 1), ANNOTATION_DARK_VALUE);
-    set_px(img, row, (int16_t)(col + 1), ANNOTATION_DARK_VALUE);
-    set_px(img, row, col, ANNOTATION_LIGHT_VALUE);
-}
-
-static uint8 average_cross(uint8 up, uint8 down, uint8 left, uint8 right)
-{
-    return (uint8)(((uint16_t)up + down + left + right) / 4u);
-}
-
-static uint8 despeckle_pixel(uint8 center,
-                             uint8 up, uint8 down,
-                             uint8 left, uint8 right)
-{
-    uint8 nb_min = up;
-    uint8 nb_max = up;
-
-    if (down < nb_min) { nb_min = down; }
-    if (left < nb_min) { nb_min = left; }
-    if (right < nb_min) { nb_min = right; }
-
-    if (down > nb_max) { nb_max = down; }
-    if (left > nb_max) { nb_max = left; }
-    if (right > nb_max) { nb_max = right; }
-
-    if (center > nb_max &&
-        (uint16_t)(center - nb_max) >= ANNOTATION_SPECKLE_DELTA) {
-        return average_cross(up, down, left, right);
-    }
-    if (center < nb_min &&
-        (uint16_t)(nb_min - center) >= ANNOTATION_SPECKLE_DELTA) {
-        return average_cross(up, down, left, right);
-    }
-
-    return center;
-}
-
-static void copy_despeckled_frame(uint8 dst[MT9V03X_H][MT9V03X_W],
-                                  const uint8 src[MT9V03X_H][MT9V03X_W])
-{
-    for (uint16_t r = 0u; r < MT9V03X_H; r++) {
-        for (uint16_t c = 0u; c < MT9V03X_W; c++) {
-            if (r == 0u || r == (uint16_t)(MT9V03X_H - 1u) ||
-                c == 0u || c == (uint16_t)(MT9V03X_W - 1u)) {
-                dst[r][c] = src[r][c];
-                continue;
-            }
-
-            dst[r][c] = despeckle_pixel(src[r][c],
-                                        src[r - 1u][c],
-                                        src[r + 1u][c],
-                                        src[r][c - 1u],
-                                        src[r][c + 1u]);
-        }
-    }
+    img[row][col] = (img[row][col] >= 128u) ? 0u : 255u;
 }
 
 static void draw_hline(uint8 img[MT9V03X_H][MT9V03X_W],
@@ -83,7 +20,7 @@ static void draw_hline(uint8 img[MT9V03X_H][MT9V03X_W],
 {
     if (c0 > c1) { int16_t tmp = c0; c0 = c1; c1 = tmp; }
     for (int16_t c = c0; c <= c1; c++) {
-        draw_mark_px(img, row, c);
+        invert_px(img, row, c);
     }
 }
 
@@ -92,7 +29,41 @@ static void draw_vline(uint8 img[MT9V03X_H][MT9V03X_W],
 {
     if (r0 > r1) { int16_t tmp = r0; r0 = r1; r1 = tmp; }
     for (int16_t r = r0; r <= r1; r++) {
-        draw_mark_px(img, r, col);
+        invert_px(img, r, col);
+    }
+}
+
+static int16_t abs_i16(int16_t value)
+{
+    return value < 0 ? (int16_t)(-value) : value;
+}
+
+static void draw_line(uint8 img[MT9V03X_H][MT9V03X_W],
+                      int16_t r0, int16_t c0,
+                      int16_t r1, int16_t c1)
+{
+    int16_t dx = abs_i16((int16_t)(c1 - c0));
+    int16_t sx = c0 < c1 ? 1 : -1;
+    int16_t dy = (int16_t)(-abs_i16((int16_t)(r1 - r0)));
+    int16_t sy = r0 < r1 ? 1 : -1;
+    int16_t err = (int16_t)(dx + dy);
+
+    while (true) {
+        invert_px(img, r0, c0);
+
+        if (r0 == r1 && c0 == c1) {
+            break;
+        }
+
+        int16_t e2 = (int16_t)(2 * err);
+        if (e2 >= dy) {
+            err = (int16_t)(err + dy);
+            c0 = (int16_t)(c0 + sx);
+        }
+        if (e2 <= dx) {
+            err = (int16_t)(err + dx);
+            r0 = (int16_t)(r0 + sy);
+        }
     }
 }
 
@@ -103,7 +74,7 @@ static void draw_hline_dashed(uint8 img[MT9V03X_H][MT9V03X_W],
     if (c0 > c1) { int16_t tmp = c0; c0 = c1; c1 = tmp; }
     for (int16_t c = c0; c <= c1; c++) {
         if (((c - c0) & 4u) == 0u) {   /* on for 4, off for 4 */
-            draw_mark_px(img, row, c);
+            invert_px(img, row, c);
         }
     }
 }
@@ -115,7 +86,7 @@ static void draw_vline_dashed(uint8 img[MT9V03X_H][MT9V03X_W],
     if (r0 > r1) { int16_t tmp = r0; r0 = r1; r1 = tmp; }
     for (int16_t r = r0; r <= r1; r++) {
         if (((r - r0) & 4u) == 0u) {
-            draw_mark_px(img, r, col);
+            invert_px(img, r, col);
         }
     }
 }
@@ -126,16 +97,6 @@ static void draw_cross(uint8 img[MT9V03X_H][MT9V03X_W],
 {
     draw_hline(img, row, (int16_t)(col - arm_len), (int16_t)(col + arm_len));
     draw_vline(img, col, (int16_t)(row - arm_len), (int16_t)(row + arm_len));
-}
-
-/* Rectangle outline */
-static void draw_rect(uint8 img[MT9V03X_H][MT9V03X_W],
-                       int16_t r0, int16_t c0, int16_t r1, int16_t c1)
-{
-    draw_hline(img, r0, c0, c1);
-    draw_hline(img, r1, c0, c1);
-    draw_vline(img, c0, r0, r1);
-    draw_vline(img, c1, r0, r1);
 }
 
 /* --- Mode-specific annotation ----------------------------------- */
@@ -152,6 +113,25 @@ static void annotate_minefield(uint8 img[MT9V03X_H][MT9V03X_W],
                                 const Minefield_Result_t *mf)
 {
     if (!mf->detected) {
+        return;
+    }
+
+    if (mf->top_row >= 0 && mf->bottom_row >= 0 &&
+        mf->top_left_col >= 0 && mf->top_right_col >= 0 &&
+        mf->bottom_left_col >= 0 && mf->bottom_right_col >= 0) {
+        draw_line(img, mf->top_row, mf->top_left_col,
+                  mf->top_row, mf->top_right_col);
+        draw_line(img, mf->bottom_row, mf->bottom_left_col,
+                  mf->bottom_row, mf->bottom_right_col);
+        draw_line(img, mf->top_row, mf->top_left_col,
+                  mf->bottom_row, mf->bottom_left_col);
+        draw_line(img, mf->top_row, mf->top_right_col,
+                  mf->bottom_row, mf->bottom_right_col);
+
+        draw_cross(img, mf->top_row, mf->top_left_col, 4);
+        draw_cross(img, mf->top_row, mf->top_right_col, 4);
+        draw_cross(img, mf->bottom_row, mf->bottom_left_col, 4);
+        draw_cross(img, mf->bottom_row, mf->bottom_right_col, 4);
         return;
     }
 
@@ -286,8 +266,8 @@ void vision_annotate(uint8 dst[MT9V03X_H][MT9V03X_W],
         return;
     }
 
-    /* Clean only the debug image; detection still uses the raw camera frame. */
-    copy_despeckled_frame(dst, src);
+    /* Copy raw frame */
+    (void)memcpy(dst, src, (uint32_t)MT9V03X_H * (uint32_t)MT9V03X_W);
 
     annotate_center_ref(dst);
 
