@@ -1145,6 +1145,12 @@
             <group>
                 <name>vision</name>
                 <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\minefield_detect.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\code\app\vision\minefield_detect.h</name>
+                </file>
+                <file>
                     <name>$PROJ_DIR$\..\..\code\app\vision\vision_annotate.c</name>
                 </file>
                 <file>
