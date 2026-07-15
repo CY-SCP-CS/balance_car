@@ -28,15 +28,14 @@
 #define MF_MIN_FRAME_PIXELS          80u
 #define MF_MIN_AREA_DEN              5u
 #define MF_EDGE_AVG_ROWS             5u
+#define MF_EDGE_BAND_MIN_ROWS        3u
 #define MF_MIN_WIDTH_RATIO_PERCENT   25u
 #define MF_TOP_WIDTH_MAX_PERCENT     110u
-#define MF_SIDE_SLOPE_TOL            6
+#define MF_SIDE_SLOPE_TOL            10
 
 #define MF_BLUE_MIN_PIXELS           35u
 #define MF_BLUE_MIN_AREA_PERCENT     2u
 #define MF_BLUE_CENTER_TOL_PERCENT   35u
-#define MF_BORDER_MIN_PERCENT        4u
-#define MF_BORDER_MAX_PERCENT        32u
 
 typedef struct {
     bool     valid;
@@ -95,11 +94,6 @@ static int16_t clamp_col(int16_t col)
         return (int16_t)(MT9V03X_W - 1u);
     }
     return col;
-}
-
-static uint16_t max_u16(uint16_t a, uint16_t b)
-{
-    return a > b ? a : b;
 }
 
 static int16_t edge_lerp(int16_t top_value,
@@ -240,7 +234,8 @@ static bool average_edge_band(const int16_t left_edge[MT9V03X_H],
                               int16_t start_row,
                               int16_t end_row,
                               int16_t *left_avg,
-                              int16_t *right_avg)
+                              int16_t *right_avg,
+                              uint16_t *valid_count)
 {
     int32_t left_sum = 0;
     int32_t right_sum = 0;
@@ -268,6 +263,9 @@ static bool average_edge_band(const int16_t left_edge[MT9V03X_H],
 
     *left_avg = (int16_t)(left_sum / (int32_t)count);
     *right_avg = (int16_t)(right_sum / (int32_t)count);
+    if (valid_count != NULL) {
+        *valid_count = count;
+    }
     return true;
 }
 
@@ -295,11 +293,15 @@ static bool estimate_box_edges(const int16_t left_edge[MT9V03X_H],
         band = 1;
     }
 
+    uint16_t top_band_rows = 0u;
+    uint16_t bottom_band_rows = 0u;
+
     if (!average_edge_band(left_edge, right_edge,
                            box->top_row,
                            (int16_t)(box->top_row + band),
                            &box->left_top,
-                           &box->right_top)) {
+                           &box->right_top,
+                           &top_band_rows)) {
         return false;
     }
 
@@ -307,7 +309,13 @@ static bool estimate_box_edges(const int16_t left_edge[MT9V03X_H],
                            (int16_t)(box->bottom_row - band),
                            box->bottom_row,
                            &box->left_bottom,
-                           &box->right_bottom)) {
+                           &box->right_bottom,
+                           &bottom_band_rows)) {
+        return false;
+    }
+
+    if (top_band_rows < MF_EDGE_BAND_MIN_ROWS ||
+        bottom_band_rows < MF_EDGE_BAND_MIN_ROWS) {
         return false;
     }
 
@@ -358,10 +366,6 @@ static bool validate_blue_center(const uint8 image[MT9V03X_H][MT9V03X_W],
     uint32_t inside_area = 0u;
     uint32_t blue_row_sum = 0u;
     uint32_t blue_col_sum = 0u;
-    int16_t blue_min_row = (int16_t)MT9V03X_H;
-    int16_t blue_max_row = -1;
-    int16_t blue_min_col = (int16_t)MT9V03X_W;
-    int16_t blue_max_col = -1;
 
     if (!box->valid) {
         return false;
@@ -386,18 +390,6 @@ static bool validate_blue_center(const uint8 image[MT9V03X_H][MT9V03X_W],
                 blue_count++;
                 blue_row_sum += (uint32_t)r;
                 blue_col_sum += (uint32_t)c;
-                if (r < blue_min_row) {
-                    blue_min_row = r;
-                }
-                if (r > blue_max_row) {
-                    blue_max_row = r;
-                }
-                if (c < blue_min_col) {
-                    blue_min_col = c;
-                }
-                if (c > blue_max_col) {
-                    blue_max_col = c;
-                }
             }
         }
     }
@@ -443,43 +435,6 @@ static bool validate_blue_center(const uint8 image[MT9V03X_H][MT9V03X_W],
 
     if (blue_center_row < (int16_t)(mid_row - row_tol) ||
         blue_center_row > (int16_t)(mid_row + row_tol)) {
-        return false;
-    }
-
-    uint16_t outer_height = (uint16_t)(box->bottom_row - box->top_row + 1);
-    uint16_t mid_width = (uint16_t)(mid_right - mid_left + 1);
-    uint16_t min_row_margin =
-        max_u16(2u, (uint16_t)(outer_height * MF_BORDER_MIN_PERCENT / 100u));
-    uint16_t max_row_margin =
-        max_u16((uint16_t)(min_row_margin + 1u),
-                (uint16_t)(outer_height * MF_BORDER_MAX_PERCENT / 100u));
-    uint16_t min_col_margin =
-        max_u16(2u, (uint16_t)(mid_width * MF_BORDER_MIN_PERCENT / 100u));
-
-    uint16_t top_margin = (uint16_t)(blue_min_row - box->top_row);
-    uint16_t bottom_margin = (uint16_t)(box->bottom_row - blue_max_row);
-    if (top_margin < min_row_margin || bottom_margin < min_row_margin ||
-        top_margin > max_row_margin || bottom_margin > max_row_margin) {
-        return false;
-    }
-
-    int16_t blue_left = edge_lerp(box->left_top, box->left_bottom,
-                                  box->top_row, box->bottom_row,
-                                  blue_center_row);
-    int16_t blue_right = edge_lerp(box->right_top, box->right_bottom,
-                                   box->top_row, box->bottom_row,
-                                   blue_center_row);
-    if (blue_right <= blue_left) {
-        return false;
-    }
-
-    if (blue_min_col <= blue_left || blue_max_col >= blue_right) {
-        return false;
-    }
-
-    uint16_t left_margin = (uint16_t)(blue_min_col - blue_left);
-    uint16_t right_margin = (uint16_t)(blue_right - blue_max_col);
-    if (left_margin < min_col_margin || right_margin < min_col_margin) {
         return false;
     }
 
