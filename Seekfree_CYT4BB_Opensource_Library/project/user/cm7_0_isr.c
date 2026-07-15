@@ -209,7 +209,7 @@ void uart1_isr (void)
     if(uart_isr_mask(UART_1))            // ����1�����ж�
     {
         
-        //wireless_module_uart_handler();  // ����ģ��ͳһ�ص�����
+        wireless_module_uart_handler();  // ����ģ��ͳһ�ص�����
       
     }
     else                                // ����1�����ж�
@@ -225,8 +225,8 @@ void uart2_isr (void)
     if(uart_isr_mask(UART_2))            // ����2�����ж�
     {
         
-        //gnss_uart_callback();            // GPSģ��ص�����      
-        wireless_module_uart_handler();  // ����ģ��ͳһ�ص����� //exchange with gnss_uart_callback() if using GPS
+        gnss_uart_callback();            // GPSģ��ص�����      
+        //wireless_module_uart_handler();  // ����ģ��ͳһ�ص����� //exchange with gnss_uart_callback() if using GPS
       
         
     }
