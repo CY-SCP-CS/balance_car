@@ -83,7 +83,7 @@ int main(void)
     cm7_1_wait_for_cm7_0_ready();
     zf_log(0, "CM7_1 booted.");
     remote_debug_init();
-    gps_position_init(TAU1201);
+    gps_shared_clear();                 // GPS disabled: keep UART2 for LoRa remote.
     interrupt_global_enable(0);
 
     ui_core1_task();
