@@ -14,6 +14,7 @@ typedef enum {
 } Nav_Route_Mode_t;
 
 typedef struct {
+    /* Route-local coordinates: origin = record start, +x = start yaw. */
     float x_m;
     float y_m;
     float distance_m;

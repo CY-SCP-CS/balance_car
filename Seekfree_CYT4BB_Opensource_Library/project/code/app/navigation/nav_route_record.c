@@ -18,23 +18,54 @@
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
+static float g_record_origin_x;
+static float g_record_origin_y;
+static float g_record_origin_distance;
+static float g_record_origin_yaw;
+static float g_record_last_yaw;
+static float g_record_yaw_accum;
+static uint32 g_record_origin_time;
 static float g_replay_start_x;
 static float g_replay_start_y;
 static float g_replay_start_yaw;
 
+static void record_set_origin(const Nav_Input_t *input)
+{
+    g_record_origin_x = input->x_m;
+    g_record_origin_y = input->y_m;
+    g_record_origin_distance = input->distance_m;
+    g_record_origin_yaw = input->yaw_rad;
+    g_record_last_yaw = input->yaw_rad;
+    g_record_yaw_accum = 0.0f;
+    g_record_origin_time = input->time_ms;
+}
+
 static void record_keypoint_from_input(uint8 index, const Nav_Input_t *input)
 {
-    g_record_keypoints[index].x_m = input->x_m;
-    g_record_keypoints[index].y_m = input->y_m;
-    g_record_keypoints[index].distance_m = input->distance_m;
-    g_record_keypoints[index].yaw_rad = input->yaw_rad;
-    g_record_keypoints[index].time_ms = input->time_ms;
+    float dx = input->x_m - g_record_origin_x;
+    float dy = input->y_m - g_record_origin_y;
+    float cos_yaw = cosf(g_record_origin_yaw);
+    float sin_yaw = sinf(g_record_origin_yaw);
+    float relative_distance = input->distance_m - g_record_origin_distance;
+
+    if (index == 0u) {
+        g_record_yaw_accum = 0.0f;
+    } else {
+        g_record_yaw_accum += nav_wrap_pi(input->yaw_rad - g_record_last_yaw);
+    }
+    g_record_last_yaw = input->yaw_rad;
+
+    g_record_keypoints[index].x_m = cos_yaw * dx + sin_yaw * dy;
+    g_record_keypoints[index].y_m = -sin_yaw * dx + cos_yaw * dy;
+    g_record_keypoints[index].distance_m =
+        relative_distance > 0.0f ? relative_distance : 0.0f;
+    g_record_keypoints[index].yaw_rad = g_record_yaw_accum;
+    g_record_keypoints[index].time_ms =
+        (uint32)(input->time_ms - g_record_origin_time);
 }
 
 static float keypoint_yaw_delta_from_start(uint8 index)
 {
-    float yaw_delta = 0.0f;
-
     if (g_record_state.keypoint_count == 0u) {
         return 0.0f;
     }
@@ -43,13 +74,7 @@ static float keypoint_yaw_delta_from_start(uint8 index)
         index = (uint8)(g_record_state.keypoint_count - 1u);
     }
 
-    for (uint8 i = 1u; i <= index; i++) {
-        const Nav_Keypoint_t *prev = &g_record_keypoints[i - 1u];
-        const Nav_Keypoint_t *cur = &g_record_keypoints[i];
-        yaw_delta += nav_wrap_pi(cur->yaw_rad - prev->yaw_rad);
-    }
-
-    return yaw_delta;
+    return g_record_keypoints[index].yaw_rad;
 }
 
 static void replay_transform_keypoint(uint8 index,
@@ -57,9 +82,7 @@ static void replay_transform_keypoint(uint8 index,
                                       float *y_m,
                                       float *yaw_rad)
 {
-    const Nav_Keypoint_t *origin = &g_record_keypoints[0];
     const Nav_Keypoint_t *keypoint;
-    float yaw_offset;
     float cos_yaw;
     float sin_yaw;
     float dx;
@@ -83,11 +106,10 @@ static void replay_transform_keypoint(uint8 index,
     }
 
     keypoint = &g_record_keypoints[index];
-    yaw_offset = nav_wrap_pi(g_replay_start_yaw - origin->yaw_rad);
-    cos_yaw = cosf(yaw_offset);
-    sin_yaw = sinf(yaw_offset);
-    dx = keypoint->x_m - origin->x_m;
-    dy = keypoint->y_m - origin->y_m;
+    cos_yaw = cosf(g_replay_start_yaw);
+    sin_yaw = sinf(g_replay_start_yaw);
+    dx = keypoint->x_m;
+    dy = keypoint->y_m;
 
     if (x_m != NULL) {
         *x_m = g_replay_start_x + cos_yaw * dx - sin_yaw * dy;
@@ -144,6 +166,7 @@ bool nav_route_record_start(const Nav_Input_t *input)
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
 
+    record_set_origin(input);
     record_keypoint_from_input(0u, input);
 
     return true;
