@@ -8,30 +8,27 @@
 #include "../../common/utils.h"
 
 #define NAV_RECORD_STRAIGHT_SPEED  0.5f
+#define NAV_RECORD_CORNER_SPEED    0.18f
 #define NAV_RECORD_TURN_SPEED      0.0f
-#define NAV_RECORD_MIN_DISTANCE_M  0.06f
+#define NAV_RECORD_WAYPOINT_REACHED_M          0.12f
+#define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.06f
+#define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
+#define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
+#define NAV_RECORD_STEERING_SIGN               (-1.0f)
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
-static float g_replay_start_distance;
+static float g_replay_start_x;
+static float g_replay_start_y;
 static float g_replay_start_yaw;
 
-static float keypoint_distance_from_start(uint8 index)
+static void record_keypoint_from_input(uint8 index, const Nav_Input_t *input)
 {
-    float distance;
-
-    if (g_record_state.keypoint_count == 0u) {
-        return 0.0f;
-    }
-
-    if (index >= g_record_state.keypoint_count) {
-        index = (uint8)(g_record_state.keypoint_count - 1u);
-    }
-
-    distance = g_record_keypoints[index].distance_m -
-               g_record_keypoints[0].distance_m;
-
-    return distance > 0.0f ? distance : 0.0f;
+    g_record_keypoints[index].x_m = input->x_m;
+    g_record_keypoints[index].y_m = input->y_m;
+    g_record_keypoints[index].distance_m = input->distance_m;
+    g_record_keypoints[index].yaw_rad = input->yaw_rad;
+    g_record_keypoints[index].time_ms = input->time_ms;
 }
 
 static float keypoint_yaw_delta_from_start(uint8 index)
@@ -53,6 +50,75 @@ static float keypoint_yaw_delta_from_start(uint8 index)
     }
 
     return yaw_delta;
+}
+
+static void replay_transform_keypoint(uint8 index,
+                                      float *x_m,
+                                      float *y_m,
+                                      float *yaw_rad)
+{
+    const Nav_Keypoint_t *origin = &g_record_keypoints[0];
+    const Nav_Keypoint_t *keypoint;
+    float yaw_offset;
+    float cos_yaw;
+    float sin_yaw;
+    float dx;
+    float dy;
+
+    if (g_record_state.keypoint_count == 0u) {
+        if (x_m != NULL) {
+            *x_m = g_replay_start_x;
+        }
+        if (y_m != NULL) {
+            *y_m = g_replay_start_y;
+        }
+        if (yaw_rad != NULL) {
+            *yaw_rad = g_replay_start_yaw;
+        }
+        return;
+    }
+
+    if (index >= g_record_state.keypoint_count) {
+        index = (uint8)(g_record_state.keypoint_count - 1u);
+    }
+
+    keypoint = &g_record_keypoints[index];
+    yaw_offset = nav_wrap_pi(g_replay_start_yaw - origin->yaw_rad);
+    cos_yaw = cosf(yaw_offset);
+    sin_yaw = sinf(yaw_offset);
+    dx = keypoint->x_m - origin->x_m;
+    dy = keypoint->y_m - origin->y_m;
+
+    if (x_m != NULL) {
+        *x_m = g_replay_start_x + cos_yaw * dx - sin_yaw * dy;
+    }
+    if (y_m != NULL) {
+        *y_m = g_replay_start_y + sin_yaw * dx + cos_yaw * dy;
+    }
+    if (yaw_rad != NULL) {
+        *yaw_rad = nav_wrap_pi(g_replay_start_yaw +
+                               keypoint_yaw_delta_from_start(index));
+    }
+}
+
+static bool waypoint_passed(float prev_x,
+                            float prev_y,
+                            float target_x,
+                            float target_y,
+                            float current_x,
+                            float current_y)
+{
+    float vx = target_x - prev_x;
+    float vy = target_y - prev_y;
+    float wx = current_x - prev_x;
+    float wy = current_y - prev_y;
+    float segment_len_sq = vx * vx + vy * vy;
+
+    if (segment_len_sq <= 0.000001f) {
+        return false;
+    }
+
+    return (vx * wx + vy * wy) >= segment_len_sq;
 }
 
 void nav_route_record_notify_navigation_stopped(bool finished,
@@ -78,9 +144,7 @@ bool nav_route_record_start(const Nav_Input_t *input)
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
 
-    g_record_keypoints[0].distance_m = input->distance_m;
-    g_record_keypoints[0].yaw_rad = input->yaw_rad;
-    g_record_keypoints[0].time_ms = input->time_ms;
+    record_keypoint_from_input(0u, input);
 
     return true;
 }
@@ -97,9 +161,7 @@ bool nav_route_record_keypoint(const Nav_Input_t *input)
     }
 
     uint8 index = g_record_state.keypoint_count;
-    g_record_keypoints[index].distance_m = input->distance_m;
-    g_record_keypoints[index].yaw_rad = input->yaw_rad;
-    g_record_keypoints[index].time_ms = input->time_ms;
+    record_keypoint_from_input(index, input);
     g_record_state.keypoint_count++;
 
     return true;
@@ -191,7 +253,8 @@ bool nav_route_replay_start(const Nav_Input_t *input)
     nav_stop();
     g_record_state.mode = NAV_ROUTE_REPLAYING;
     g_record_state.replay_index = 1u;
-    g_replay_start_distance = input->distance_m;
+    g_replay_start_x = input->x_m;
+    g_replay_start_y = input->y_m;
     g_replay_start_yaw = input->yaw_rad;
 
     return true;
@@ -203,7 +266,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         0.0f, 0.0f, false, false, NAV_REGION_NONE, false, false
     };
     Nav_Config_t cfg;
-    float traveled;
+    float reach_radius;
 
     if (input == NULL ||
         g_record_state.mode != NAV_ROUTE_REPLAYING ||
@@ -220,48 +283,46 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
     }
 
     cfg = nav_get_config();
-    traveled = input->distance_m - g_replay_start_distance;
-    if (traveled < 0.0f) {
-        traveled = 0.0f;
+    reach_radius = cfg.distance_tolerance_m;
+    if (reach_radius < NAV_RECORD_WAYPOINT_REACHED_M) {
+        reach_radius = NAV_RECORD_WAYPOINT_REACHED_M;
     }
 
     while (g_record_state.replay_index < g_record_state.keypoint_count) {
         uint8 prev_index = (uint8)(g_record_state.replay_index - 1u);
         uint8 cur_index = g_record_state.replay_index;
-        float prev_distance = keypoint_distance_from_start(prev_index);
-        float target_distance = keypoint_distance_from_start(cur_index);
-        float segment_distance = target_distance - prev_distance;
-        float prev_yaw_delta = keypoint_yaw_delta_from_start(prev_index);
-        float target_yaw_delta = keypoint_yaw_delta_from_start(cur_index);
-        float segment_yaw_delta = target_yaw_delta - prev_yaw_delta;
-        float progress = 1.0f;
+        float prev_x;
+        float prev_y;
+        float target_x;
+        float target_y;
         float target_yaw;
+        float segment_dx;
+        float segment_dy;
+        float segment_distance;
+        float target_dx;
+        float target_dy;
+        float target_distance;
         float yaw_error;
-        bool arrived;
+        float abs_yaw_error;
 
-        if (segment_distance > 0.0f) {
-            progress = clamp((traveled - prev_distance) / segment_distance,
-                             0.0f,
-                             1.0f);
-        }
+        replay_transform_keypoint(prev_index, &prev_x, &prev_y, NULL);
+        replay_transform_keypoint(cur_index, &target_x, &target_y, &target_yaw);
 
-        target_yaw = g_replay_start_yaw +
-                     prev_yaw_delta +
-                     segment_yaw_delta * progress;
-        yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
+        segment_dx = target_x - prev_x;
+        segment_dy = target_y - prev_y;
+        segment_distance = sqrtf(segment_dx * segment_dx +
+                                 segment_dy * segment_dy);
 
-        if (segment_distance >= NAV_RECORD_MIN_DISTANCE_M) {
-            out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
-            out.steering_cmd = cfg.yaw_kp * yaw_error;
-            arrived = traveled >= target_distance - cfg.distance_tolerance_m;
-        } else {
+        if (segment_distance < NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M) {
+            yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
+            if (fabsf(yaw_error) <= cfg.yaw_tolerance_rad) {
+                g_record_state.replay_index++;
+                continue;
+            }
+
             out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-            out.steering_cmd = cfg.turn_kp * yaw_error;
-            arrived = fabsf(segment_yaw_delta) <= cfg.yaw_tolerance_rad ||
-                      fabsf(yaw_error) <= cfg.yaw_tolerance_rad;
-        }
-
-        if (!arrived) {
+            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
+                               cfg.turn_kp * yaw_error;
             out.region = NAV_REGION_NORMAL;
             out.steering_cmd = clamp(out.steering_cmd,
                                      -cfg.steering_limit,
@@ -269,7 +330,44 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             return out;
         }
 
-        g_record_state.replay_index++;
+        target_dx = target_x - input->x_m;
+        target_dy = target_y - input->y_m;
+        target_distance = sqrtf(target_dx * target_dx +
+                                target_dy * target_dy);
+
+        if (target_distance <= reach_radius ||
+            waypoint_passed(prev_x,
+                            prev_y,
+                            target_x,
+                            target_y,
+                            input->x_m,
+                            input->y_m)) {
+            g_record_state.replay_index++;
+            continue;
+        }
+
+        yaw_error = nav_wrap_pi(atan2f(target_dy, target_dx) -
+                                input->yaw_rad);
+        abs_yaw_error = fabsf(yaw_error);
+
+        if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
+            out.velocity_cmd = NAV_RECORD_TURN_SPEED;
+            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
+                               cfg.turn_kp * yaw_error;
+        } else {
+            out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
+            if (abs_yaw_error >= NAV_RECORD_SLOW_YAW_ERROR_RAD) {
+                out.velocity_cmd = NAV_RECORD_CORNER_SPEED;
+            }
+            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
+                               cfg.yaw_kp * yaw_error;
+        }
+
+        out.region = NAV_REGION_NORMAL;
+        out.steering_cmd = clamp(out.steering_cmd,
+                                 -cfg.steering_limit,
+                                 cfg.steering_limit);
+        return out;
     }
 
     g_record_state.mode = NAV_ROUTE_READY;

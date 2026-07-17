@@ -42,6 +42,8 @@ typedef struct {
 } Nav_Segment_t;
 
 typedef struct {
+    float x_m;
+    float y_m;
     float distance_m;
     float yaw_rad;
     uint32 time_ms;

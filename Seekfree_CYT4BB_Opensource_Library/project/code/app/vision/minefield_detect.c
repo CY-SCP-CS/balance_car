@@ -34,7 +34,7 @@
 #define MF_SIDE_SLOPE_TOL            10
 
 #define MF_BLUE_MIN_PIXELS           35u
-#define MF_BLUE_MIN_AREA_PERCENT     2u
+#define MF_BLUE_MIN_AREA_PERCENT     10u
 #define MF_BLUE_CENTER_TOL_PERCENT   35u
 
 typedef struct {

@@ -39,6 +39,8 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     static uint32 last_gps_sequence = 0u;
     float imu_yaw;
     float odom_distance;
+    float odom_x;
+    float odom_y;
     Gps_Shared_Data_t gps;
 
     if (input == NULL || ctrl == NULL) {
@@ -54,6 +56,8 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     input->time_ms += NAV_LOOP_DT_MS;
 
     odom_distance = robot_control_get_distance();
+    odom_x = robot_control_get_x();
+    odom_y = robot_control_get_y();
     if (!odom_set) {
         last_odom_distance = odom_distance;
         fused_distance = odom_distance;
@@ -116,6 +120,8 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     }
 
     input->yaw_rad = nav_wrap_pi(imu_yaw + gps_yaw_correction);
+    input->x_m = odom_x;
+    input->y_m = odom_y;
     input->distance_m = fused_distance;
 
     /* Vision updates landmark / obstacle fields after this update. */
