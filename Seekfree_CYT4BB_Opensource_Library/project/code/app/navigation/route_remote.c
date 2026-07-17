@@ -54,6 +54,10 @@ void route_remote_update(const Nav_Input_t *input)
 
     if (!remote->connected) {
         g_prev_connected = false;
+        state = nav_route_record_get_state();
+        if (state.mode == NAV_ROUTE_REPLAYING) {
+            nav_route_replay_stop();
+        }
         return;
     }
 
