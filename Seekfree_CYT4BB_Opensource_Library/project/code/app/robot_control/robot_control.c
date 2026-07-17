@@ -57,7 +57,7 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       -0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 2000.0f, 500.0f);
+    pid_init(&g_speed_pid,       42.0f, 6.2f, 0.177f, ROBOT_CONTROL_DT, 2000.0f, 500.0f);
     //偏航串级: 外环角度, 内环角速度
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
@@ -241,13 +241,24 @@ void control_task(void){
 
     bool airborne = jump_is_airborne();
 
+    /* ── 速度指令覆盖: pitch_balance_control 和 leg_cmd_solve 共用 ── */
+    if (!airborne) {
+        track_bridge_climb_apply(&cmd_local);
+        if (track_bumpy_is_active()) {
+            cmd_local.target_speed = track_bumpy_get_speed();
+        }
+        if (jump_is_stabilizing() || jump_is_squatting()) {
+            float app_speed = jump_get_approach_speed();
+            if (app_speed != 0.0f) {
+                cmd_local.target_speed = app_speed;
+            }
+        }
+    }
+
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
         pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd);
-
-        /* ── 单边桥/爬坡速度覆盖 (leg_cmd_solve 之前) ── */
-        track_bridge_climb_apply(&cmd_local);
+            &g_pitch_gyro_pid, &g_motor_cmd, cmd_local.target_speed);
 
         /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
         track_rotate720_update(&sensor_local, &cmd_local);
@@ -304,24 +315,13 @@ void control_task(void){
     } else {
         /* 空中: 轮子反作用力矩提供部分身体稳定 */
         pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd);
+            &g_pitch_gyro_pid, &g_motor_cmd, 0.0f);
         g_motor_cmd.left_motor_pwm  = (int)(g_motor_cmd.left_motor_pwm  * AIR_BALANCE_GAIN);
         g_motor_cmd.right_motor_pwm = (int)(g_motor_cmd.right_motor_pwm * AIR_BALANCE_GAIN);
     }
 
     /* ── 足端位置计算 ── */
     if (!airborne) {
-        /* 颠簸路段: 极慢速度 */
-        if (track_bumpy_is_active()) {
-            cmd_local.target_speed = track_bumpy_get_speed();
-        }
-        /* 起跳前自稳+下蹲: 保持前向接近速度, 蹬地和着地阶段不干预 */
-        if (jump_is_stabilizing() || jump_is_squatting()) {
-            float app_speed = jump_get_approach_speed();
-            if (app_speed != 0.0f) {
-                cmd_local.target_speed = app_speed;
-            }
-        }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
     } else {

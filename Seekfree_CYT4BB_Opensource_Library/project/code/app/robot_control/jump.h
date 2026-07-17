@@ -47,6 +47,11 @@ bool jump_is_stabilizing(void);
 /* ─── 是否在下蹲蓄力阶段 ── */
 bool jump_is_squatting(void);
 
+/* ─── 是否在落地缓冲阶段 (轮子应锁死, 防前冲) ──
+ *  LAND 阶段的收腿缓冲 + 保持期间返回 true, 释放阶段起返回 false.
+ */
+bool jump_is_landing_cushion(void);
+
 /* ─── 获取起跳前的前向接近速度 ───
  *  返回 jump_start() 传入的 target_speed, 调用者在 STABILIZE 阶段施加.
  */
