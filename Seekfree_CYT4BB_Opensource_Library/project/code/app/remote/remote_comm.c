@@ -150,10 +150,14 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
         g_remote_velocity_target = 0.0f;
         ctrl->velocity_cmd = 0.0f;
         ctrl->steering_cmd = 0.0f;
+        ctrl->yaw_target_valid = false;
+        ctrl->yaw_target_rad = 0.0f;
         ctrl->on_bridge = false;
         return;
     }
 
+    ctrl->yaw_target_valid = false;
+    ctrl->yaw_target_rad = 0.0f;
     ctrl->on_bridge = (g_remote_state.switch_key[0] != 0u);
 
     /* 依据遥控协议注释：

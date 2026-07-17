@@ -135,4 +135,6 @@ void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav)
 
     ctrl->velocity_cmd = nav->velocity_cmd;
     ctrl->steering_cmd = nav->steering_cmd;
+    ctrl->yaw_target_valid = nav->target_yaw_valid;
+    ctrl->yaw_target_rad = nav->target_yaw_rad;
 }

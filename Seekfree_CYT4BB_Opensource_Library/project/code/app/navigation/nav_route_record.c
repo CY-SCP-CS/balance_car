@@ -14,7 +14,6 @@
 #define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.06f
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_STEERING_SIGN               (-1.0f)
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
@@ -285,9 +284,7 @@ bool nav_route_replay_start(const Nav_Input_t *input)
 
 Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
 {
-    Nav_Output_t out = {
-        0.0f, 0.0f, false, false, NAV_REGION_NONE, false, false
-    };
+    Nav_Output_t out = {0};
     Nav_Config_t cfg;
     float reach_radius;
 
@@ -319,6 +316,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float target_x;
         float target_y;
         float target_yaw;
+        float target_bearing;
         float segment_dx;
         float segment_dy;
         float segment_distance;
@@ -344,12 +342,9 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             }
 
             out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
-                               cfg.turn_kp * yaw_error;
+            out.target_yaw_valid = true;
+            out.target_yaw_rad = target_yaw;
             out.region = NAV_REGION_NORMAL;
-            out.steering_cmd = clamp(out.steering_cmd,
-                                     -cfg.steering_limit,
-                                     cfg.steering_limit);
             return out;
         }
 
@@ -369,27 +364,22 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             continue;
         }
 
-        yaw_error = nav_wrap_pi(atan2f(target_dy, target_dx) -
-                                input->yaw_rad);
+        target_bearing = atan2f(target_dy, target_dx);
+        yaw_error = nav_wrap_pi(target_bearing - input->yaw_rad);
         abs_yaw_error = fabsf(yaw_error);
 
         if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
             out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
-                               cfg.turn_kp * yaw_error;
         } else {
             out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
             if (abs_yaw_error >= NAV_RECORD_SLOW_YAW_ERROR_RAD) {
                 out.velocity_cmd = NAV_RECORD_CORNER_SPEED;
             }
-            out.steering_cmd = NAV_RECORD_STEERING_SIGN *
-                               cfg.yaw_kp * yaw_error;
         }
 
+        out.target_yaw_valid = true;
+        out.target_yaw_rad = target_bearing;
         out.region = NAV_REGION_NORMAL;
-        out.steering_cmd = clamp(out.steering_cmd,
-                                 -cfg.steering_limit,
-                                 cfg.steering_limit);
         return out;
     }
 

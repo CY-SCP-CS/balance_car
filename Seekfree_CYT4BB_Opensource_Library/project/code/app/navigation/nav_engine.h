@@ -79,6 +79,8 @@ typedef struct {
 typedef struct {
     float velocity_cmd;
     float steering_cmd;
+    bool target_yaw_valid;
+    float target_yaw_rad;
     bool finished;
     bool safety_stop;
     Nav_Region_t region;
