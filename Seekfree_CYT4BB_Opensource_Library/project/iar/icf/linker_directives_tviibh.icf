@@ -74,7 +74,7 @@ define symbol ecc_init_width                    = 8; // Most restrictive native 
 define symbol cm0plus_heap_reserve              =  1K;
 define symbol cm0plus_stack_reserve             =  1K;
 define symbol cm7_heap_reserve                  =  1K;
-define symbol cm7_stack_reserve                 =  8K;
+define symbol cm7_stack_reserve                 = 16K;
 define symbol cm7_itcm_reserve                  = 16K;
 define symbol cm7_dtcm_reserve                  = 16K;
 

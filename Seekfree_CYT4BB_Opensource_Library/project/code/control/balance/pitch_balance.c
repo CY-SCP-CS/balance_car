@@ -14,11 +14,12 @@ void pitch_balance_reset_statics(void) {
 
 void pitch_balance_control(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
-    Motor_cmd_duty_t *motor_cmd){
+    Motor_cmd_duty_t *motor_cmd, float target_speed){
 
     if (pb_counter == 0) {
         float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
-        pb_speed_output = pid_calculate(pid_speed, 0.0f, speed_cur);
+        float speed_norm = speed_cur / 60.0f;  /* 归一化到与 target_speed 同一量纲 */
+        pb_speed_output = pid_calculate(pid_speed, target_speed, speed_norm);
 
         float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
         float angle_output = pid_calculate(pid_angle, 0.0f, angle_cur);
@@ -43,12 +44,13 @@ void pitch_balance_control(const Sensor_data_t *sensor_data,
 
 void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     PID_Controller_t *pid_speed, PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
-    Motor_cmd_duty_t *motor_cmd){
+    Motor_cmd_duty_t *motor_cmd, float target_speed){
 
     // ==========================================
     // 1. 数据采样与处理（满频运行，不降频）
     // ==========================================
     float speed_cur = (sensor_data->motor_left_speed + sensor_data->motor_right_speed) / 2.0f;
+    float speed_norm = speed_cur / 60.0f;  /* 归一化到与 target_speed 同一量纲 */
     float angle_cur = sensor_data->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     float gyro_cur  = sensor_data->gyro_pitch;
 
@@ -83,7 +85,7 @@ void pitch_balance_control_fuzzy_pid(const Sensor_data_t *sensor_data,
     float original_kd = pid_speed->kd;
     pid_speed->kd = original_kd + speed_kd_bias; // 注入模糊阻尼
 
-    float speed_output = pid_calculate(pid_speed, 0.0f, speed_cur);
+    float speed_output = pid_calculate(pid_speed, target_speed, speed_norm);
     pid_speed->kd = original_kd; // 恢复原参数防止污染下一次计算
 
     // 应用模糊权重
