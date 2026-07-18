@@ -109,11 +109,10 @@ void route_remote_update(const Nav_Input_t *input)
     if (record_switch_falling) {
         state = nav_route_record_get_state();
         if (state.mode == NAV_ROUTE_RECORDING) {
-            if (!nav_route_record_keypoint(input)) {
-                buzzer_beep(BEEP_ERROR);
-            }
             if (nav_route_record_finish()) {
                 buzzer_beep(BEEP_LONG);
+            } else {
+                buzzer_beep(BEEP_ERROR);
             }
         }
     }
