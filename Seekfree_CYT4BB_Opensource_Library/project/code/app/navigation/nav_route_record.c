@@ -152,6 +152,17 @@ static void replay_advance_waypoint(void)
     buzzer_beep(BEEP_SHORT);
 }
 
+static void replay_hold_current_yaw(Nav_Output_t *out, const Nav_Input_t *input)
+{
+    if (out == NULL || input == NULL) {
+        return;
+    }
+
+    out->velocity_cmd = 0.0f;
+    out->target_yaw_valid = true;
+    out->target_yaw_rad = input->yaw_rad;
+}
+
 void nav_route_record_notify_navigation_stopped(bool finished,
                                                 bool safety_stop)
 {
@@ -309,6 +320,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         g_record_state.mode = NAV_ROUTE_READY;
         g_record_state.replay_index = 0u;
         out.safety_stop = true;
+        replay_hold_current_yaw(&out, input);
         return out;
     }
 
@@ -352,6 +364,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
             if (fabsf(yaw_error) <= cfg.yaw_tolerance_rad) {
                 replay_advance_waypoint();
+                replay_hold_current_yaw(&out, input);
                 return out;
             }
 
@@ -376,6 +389,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                              input->x_m,
                              input->y_m))) {
             replay_advance_waypoint();
+            replay_hold_current_yaw(&out, input);
             return out;
         }
 
@@ -408,6 +422,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
     g_record_state.mode = NAV_ROUTE_READY;
     g_record_state.replay_index = 0u;
     out.finished = true;
+    replay_hold_current_yaw(&out, input);
     return out;
 }
 

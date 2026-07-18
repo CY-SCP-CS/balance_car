@@ -4,6 +4,48 @@ small_device_value_struct small_driver_value;               /* 驱动轮电机 (
 small_device_value_struct small_driver_value_leg_left;      /* 左腿关节电机 (UART6) */
 small_device_value_struct small_driver_value_leg_right;     /* 右腿关节电机 (UART3) */
 
+#define SMALL_DRIVER_FRAME_HEAD      0xA5u
+#define SMALL_DRIVER_FRAME_LEN       7u
+#define SMALL_DRIVER_UART_BUF_LEN    16u
+
+static void small_driver_parse_frame(small_device_value_struct *driver_value)
+{
+    driver_value->sum_check_data =  driver_value->receive_data_buffer[0] +
+                                    driver_value->receive_data_buffer[1] +
+                                    driver_value->receive_data_buffer[2] +
+                                    driver_value->receive_data_buffer[3] +
+                                    driver_value->receive_data_buffer[4] +
+                                    driver_value->receive_data_buffer[5];
+
+    if(driver_value->sum_check_data == driver_value->receive_data_buffer[6])
+    {
+        if(driver_value->receive_data_buffer[1] == 0x02)
+        {
+            driver_value->receive_left_speed_data = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
+            driver_value->receive_right_speed_data = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
+        }
+        else if(driver_value->receive_data_buffer[1] == 0x04)
+        {
+            short int left_angle_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
+            short int right_angle_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
+
+            driver_value->receive_left_angle_data  = (float)left_angle_temp  / 100.0f;
+            driver_value->receive_right_angle_data = (float)right_angle_temp / 100.0f;
+        }
+        else if(driver_value->receive_data_buffer[1] == 0x05)
+        {
+            short int left_location_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
+            short int right_location_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
+
+            driver_value->receive_left_location_data  = (float)left_location_temp  / 100.0f * driver_value->left_motor_dir;
+            driver_value->receive_right_location_data = (float)right_location_temp / 100.0f * driver_value->right_motor_dir;
+        }
+    }
+
+    driver_value->receive_data_count = 0;
+    memset(driver_value->receive_data_buffer, 0, sizeof(driver_value->receive_data_buffer));
+}
+
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数名称     无刷通讯 接收回调函数
@@ -14,69 +56,32 @@ small_device_value_struct small_driver_value_leg_right;     /* 右腿关节电�
 //-------------------------------------------------------------------------------------------------------------------
 void small_driver_control_callback(small_device_value_struct *driver_value)
 {
-    uint8 receive_data[7];
+    uint8 receive_data[SMALL_DRIVER_UART_BUF_LEN];
     uint8 receive_len;
 
     receive_len = uart_query_buffer(driver_value->driver_uart, receive_data);
 
     if(receive_len)
     {
-        if(driver_value->receive_data_buffer[0] != 0xA5)
-        {
-            driver_value->receive_data_count = 0;
-        }
-
         for(int i = 0; i < receive_len; i ++)
         {
-            driver_value->receive_data_buffer[driver_value->receive_data_count ++] = receive_data[i];
-        }
-
-        if(driver_value->receive_data_count >= 7)
-        {
-            if(driver_value->receive_data_buffer[0] == 0xA5)
+            if(driver_value->receive_data_count == 0u &&
+               receive_data[i] != SMALL_DRIVER_FRAME_HEAD)
             {
-                driver_value->sum_check_data =  driver_value->receive_data_buffer[0] +
-                                                driver_value->receive_data_buffer[1] +
-                                                driver_value->receive_data_buffer[2] +
-                                                driver_value->receive_data_buffer[3] +
-                                                driver_value->receive_data_buffer[4] +
-                                                driver_value->receive_data_buffer[5];
-                if(driver_value->sum_check_data == driver_value->receive_data_buffer[6])
-                {
-                    if(driver_value->receive_data_buffer[1] == 0x02)
-                    {
-                        driver_value->receive_left_speed_data = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
-                        driver_value->receive_right_speed_data = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
-                    }
-                    else if(driver_value->receive_data_buffer[1] == 0x04)
-                    {
-                        short int left_angle_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
-                        short int right_angle_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
-
-                        driver_value->receive_left_angle_data  = (float)left_angle_temp  / 100.0f;
-                        driver_value->receive_right_angle_data = (float)right_angle_temp / 100.0f;
-                    }
-                    else if(driver_value->receive_data_buffer[1] == 0x05)
-                    {
-                        short int left_location_temp  = (((int)driver_value->receive_data_buffer[2] << 8) | (int)driver_value->receive_data_buffer[3]);
-                        short int right_location_temp = (((int)driver_value->receive_data_buffer[4] << 8) | (int)driver_value->receive_data_buffer[5]);
-
-                        driver_value->receive_left_location_data  = (float)left_location_temp  / 100.0f * driver_value->left_motor_dir;
-                        driver_value->receive_right_location_data = (float)right_location_temp / 100.0f * driver_value->right_motor_dir;
-                    }
-                    driver_value->receive_data_count = 0;
-                    memset(driver_value->receive_data_buffer, 0, sizeof(driver_value->receive_data_buffer));
-                }
-                else
-                {
-                    driver_value->receive_data_count = 0;
-                    memset(driver_value->receive_data_buffer, 0, sizeof(driver_value->receive_data_buffer));
-                }
+                continue;
             }
-            else
+
+            if(driver_value->receive_data_count >= SMALL_DRIVER_FRAME_LEN)
             {
                 driver_value->receive_data_count = 0;
                 memset(driver_value->receive_data_buffer, 0, sizeof(driver_value->receive_data_buffer));
+            }
+
+            driver_value->receive_data_buffer[driver_value->receive_data_count ++] = receive_data[i];
+
+            if(driver_value->receive_data_count >= SMALL_DRIVER_FRAME_LEN)
+            {
+                small_driver_parse_frame(driver_value);
             }
         }
     }
