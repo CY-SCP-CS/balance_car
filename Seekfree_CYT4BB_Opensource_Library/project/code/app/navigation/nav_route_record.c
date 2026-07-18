@@ -10,10 +10,10 @@
 
 #define NAV_RECORD_STRAIGHT_SPEED  0.3f
 #define NAV_RECORD_CORNER_SPEED    0.18f
-#define NAV_RECORD_TURN_SPEED      0.09f
-#define NAV_RECORD_WAYPOINT_REACHED_M          0.01f
-#define NAV_RECORD_WAYPOINT_PASSED_M           0.02f
-#define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.015f
+#define NAV_RECORD_TURN_SPEED      0.0f
+#define NAV_RECORD_WAYPOINT_REACHED_M          0.03f
+#define NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M  0.04f
+#define NAV_RECORD_SHORT_SEGMENT_M             0.015f
 #define NAV_RECORD_CROSSTRACK_GAIN             2.0f
 #define NAV_RECORD_CROSSTRACK_LIMIT_RAD        (20.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
@@ -138,12 +138,18 @@ static bool waypoint_passed(float prev_x,
     float wx = current_x - prev_x;
     float wy = current_y - prev_y;
     float segment_len_sq = vx * vx + vy * vy;
+    float cross_track;
 
     if (segment_len_sq <= 0.000001f) {
         return false;
     }
 
-    return (vx * wx + vy * wy) >= segment_len_sq;
+    if ((vx * wx + vy * wy) < segment_len_sq) {
+        return false;
+    }
+
+    cross_track = fabsf(vx * wy - vy * wx) / sqrtf(segment_len_sq);
+    return cross_track <= NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M;
 }
 
 static void replay_advance_waypoint(void)
@@ -338,7 +344,6 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float prev_y;
         float target_x;
         float target_y;
-        float target_yaw;
         float target_yaw_cmd;
         float segment_dx;
         float segment_dy;
@@ -353,26 +358,16 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float abs_yaw_error;
 
         replay_transform_keypoint(prev_index, &prev_x, &prev_y, NULL);
-        replay_transform_keypoint(cur_index, &target_x, &target_y, &target_yaw);
+        replay_transform_keypoint(cur_index, &target_x, &target_y, NULL);
 
         segment_dx = target_x - prev_x;
         segment_dy = target_y - prev_y;
         segment_distance = sqrtf(segment_dx * segment_dx +
                                  segment_dy * segment_dy);
 
-        if (segment_distance < NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M) {
-            yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
-            if (fabsf(yaw_error) <= cfg.yaw_tolerance_rad) {
-                replay_advance_waypoint();
-                replay_hold_current_yaw(&out, input);
-                return out;
-            }
-
-            out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-            out.target_yaw_valid = true;
-            out.target_yaw_rad = target_yaw;
-            out.region = NAV_REGION_NORMAL;
-            return out;
+        if (segment_distance < NAV_RECORD_SHORT_SEGMENT_M) {
+            replay_advance_waypoint();
+            continue;
         }
 
         target_dx = target_x - input->x_m;
@@ -381,13 +376,12 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                                 target_dy * target_dy);
 
         if (target_distance <= reach_radius ||
-            (target_distance <= NAV_RECORD_WAYPOINT_PASSED_M &&
-             waypoint_passed(prev_x,
-                             prev_y,
-                             target_x,
-                             target_y,
-                             input->x_m,
-                             input->y_m))) {
+            waypoint_passed(prev_x,
+                            prev_y,
+                            target_x,
+                            target_y,
+                            input->x_m,
+                            input->y_m)) {
             replay_advance_waypoint();
             replay_hold_current_yaw(&out, input);
             return out;
