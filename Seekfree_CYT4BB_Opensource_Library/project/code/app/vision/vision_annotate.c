@@ -33,6 +33,40 @@ static void draw_vline(uint8 img[MT9V03X_H][MT9V03X_W],
     }
 }
 
+static int16_t abs_i16(int16_t value)
+{
+    return value < 0 ? (int16_t)(-value) : value;
+}
+
+static void draw_line(uint8 img[MT9V03X_H][MT9V03X_W],
+                      int16_t r0, int16_t c0,
+                      int16_t r1, int16_t c1)
+{
+    int16_t dx = abs_i16((int16_t)(c1 - c0));
+    int16_t sx = c0 < c1 ? 1 : -1;
+    int16_t dy = (int16_t)(-abs_i16((int16_t)(r1 - r0)));
+    int16_t sy = r0 < r1 ? 1 : -1;
+    int16_t err = (int16_t)(dx + dy);
+
+    while (true) {
+        invert_px(img, r0, c0);
+
+        if (r0 == r1 && c0 == c1) {
+            break;
+        }
+
+        int16_t e2 = (int16_t)(2 * err);
+        if (e2 >= dy) {
+            err = (int16_t)(err + dy);
+            c0 = (int16_t)(c0 + sx);
+        }
+        if (e2 <= dx) {
+            err = (int16_t)(err + dx);
+            r0 = (int16_t)(r0 + sy);
+        }
+    }
+}
+
 /* Dashed horizontal line — skips every other 4-px segment */
 static void draw_hline_dashed(uint8 img[MT9V03X_H][MT9V03X_W],
                                int16_t row, int16_t c0, int16_t c1)
@@ -65,30 +99,31 @@ static void draw_cross(uint8 img[MT9V03X_H][MT9V03X_W],
     draw_vline(img, col, (int16_t)(row - arm_len), (int16_t)(row + arm_len));
 }
 
-/* Rectangle outline */
-static void draw_rect(uint8 img[MT9V03X_H][MT9V03X_W],
-                       int16_t r0, int16_t c0, int16_t r1, int16_t c1)
-{
-    draw_hline(img, r0, c0, c1);
-    draw_hline(img, r1, c0, c1);
-    draw_vline(img, c0, r0, r1);
-    draw_vline(img, c1, r0, r1);
-}
-
 /* --- Mode-specific annotation ----------------------------------- */
-
-static void annotate_center_ref(uint8 img[MT9V03X_H][MT9V03X_W])
-{
-    /* Small cross at frame center — always drawn as orientation reference */
-    int16_t cr = (int16_t)(MT9V03X_H / 2u);
-    int16_t cc = (int16_t)(MT9V03X_W / 2u);
-    draw_cross(img, cr, cc, 6);
-}
 
 static void annotate_minefield(uint8 img[MT9V03X_H][MT9V03X_W],
                                 const Minefield_Result_t *mf)
 {
     if (!mf->detected) {
+        return;
+    }
+
+    if (mf->top_row >= 0 && mf->bottom_row >= 0 &&
+        mf->top_left_col >= 0 && mf->top_right_col >= 0 &&
+        mf->bottom_left_col >= 0 && mf->bottom_right_col >= 0) {
+        draw_line(img, mf->top_row, mf->top_left_col,
+                  mf->top_row, mf->top_right_col);
+        draw_line(img, mf->bottom_row, mf->bottom_left_col,
+                  mf->bottom_row, mf->bottom_right_col);
+        draw_line(img, mf->top_row, mf->top_left_col,
+                  mf->bottom_row, mf->bottom_left_col);
+        draw_line(img, mf->top_row, mf->top_right_col,
+                  mf->bottom_row, mf->bottom_right_col);
+
+        draw_cross(img, mf->top_row, mf->top_left_col, 4);
+        draw_cross(img, mf->top_row, mf->top_right_col, 4);
+        draw_cross(img, mf->bottom_row, mf->bottom_left_col, 4);
+        draw_cross(img, mf->bottom_row, mf->bottom_right_col, 4);
         return;
     }
 
@@ -225,8 +260,6 @@ void vision_annotate(uint8 dst[MT9V03X_H][MT9V03X_W],
 
     /* Copy raw frame */
     (void)memcpy(dst, src, (uint32_t)MT9V03X_H * (uint32_t)MT9V03X_W);
-
-    annotate_center_ref(dst);
 
     switch (mode) {
     case VISION_MODE_MINEFIELD:

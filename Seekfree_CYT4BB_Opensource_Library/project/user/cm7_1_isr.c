@@ -174,7 +174,7 @@ void uart2_isr (void)
     if(uart_isr_mask(UART_2))            // 串口2接收中断
     {
         
-        gnss_uart_callback();
+        /* GPS disabled: UART2 is owned by CM7_0 LoRa remote. */
         
     }
     else                                // 串口2发送中断

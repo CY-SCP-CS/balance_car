@@ -221,9 +221,7 @@ void nav_stop(void)
 
 Nav_Output_t nav_update(const Nav_Input_t *input)
 {
-    Nav_Output_t out = {
-        0.0f, 0.0f, false, false, NAV_REGION_NONE, false, false
-    };
+    Nav_Output_t out = {0};
 
     fill_output_status(&out);
 
@@ -272,6 +270,8 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
         yaw_error = nav_wrap_pi(hold_yaw - input->yaw_rad);
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
+        out.target_yaw_valid = true;
+        out.target_yaw_rad = hold_yaw;
 
         if (segment_distance >= seg->target_distance_m - g_cfg.distance_tolerance_m ||
             timed_out) {
@@ -283,6 +283,8 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
     case NAV_ACTION_WAIT_LANDMARK:
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.yaw_kp * yaw_error;
+        out.target_yaw_valid = true;
+        out.target_yaw_rad = final_yaw;
 
         if (landmark_seen(input, seg->landmark)) {
             advance_segment(input);
@@ -296,6 +298,8 @@ Nav_Output_t nav_update(const Nav_Input_t *input)
     case NAV_ACTION_TURN:
         out.velocity_cmd = seg->target_speed;
         out.steering_cmd = g_cfg.turn_kp * yaw_error;
+        out.target_yaw_valid = true;
+        out.target_yaw_rad = final_yaw;
 
         if (fabsf(yaw_error) <= g_cfg.yaw_tolerance_rad || timed_out) {
             advance_segment(input);

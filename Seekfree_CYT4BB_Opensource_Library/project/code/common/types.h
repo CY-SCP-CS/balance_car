@@ -43,6 +43,8 @@ typedef struct {
     float accel_z;
     float steering_cmd;
     float velocity_cmd;
+    bool yaw_target_valid;
+    float yaw_target_rad;
     bool on_bridge;
 
     float motor_angle_fl;

@@ -661,7 +661,11 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
             persist_yaw = sensor->angle_yaw;
             persist_init = true;
         }
-        persist_yaw += ctrl->steering_cmd * REMOTE_STEER_GAIN_RAD * ROBOT_CONTROL_DT;
+        if (ctrl->yaw_target_valid) {
+            persist_yaw = ctrl->yaw_target_rad;
+        } else {
+            persist_yaw += ctrl->steering_cmd * REMOTE_STEER_GAIN_RAD * ROBOT_CONTROL_DT;
+        }
         while (persist_yaw >  M_PI) persist_yaw -= 2.0f * M_PI;
         while (persist_yaw < -M_PI) persist_yaw += 2.0f * M_PI;
         cmd->target_direction = persist_yaw;

@@ -34,25 +34,45 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include "../code/app/navigation/gps_position.h"
 #include "../code/app/remote/remote_debug.h"
 #include "../code/hmi/ui/ui_manager.h"
+
+#define CM7_0_READY_MAGIC 0x43373031u
+
+#pragma location = 0x28006C00
+__no_init volatile uint32 g_cm7_0_ready;
+
+static void cm7_1_wait_for_cm7_0_ready(void)
+{
+    while (true) {
+        SCB_InvalidateDCache_by_Addr((uint32 *)&g_cm7_0_ready, 32u);
+        if (g_cm7_0_ready == CM7_0_READY_MAGIC) {
+            break;
+        }
+        system_delay_ms(1);
+    }
+}
 
 // CM7_1 runs the remote debug UI.
 // Runtime state can be filled from CM7_0 through shared memory/IPC later.
 static void ui_core1_task(void)
 {
+    uint32 time_ms = 0u;
     Ctrl_Input_t ctrl = {0};
     Nav_Input_t nav_input = {0};
     Nav_Output_t nav_output = {0};
     Nav_State_t nav_state = {0};
     Vision_Result_t vision = {0};
-    Vision_Mode_t vision_mode = VISION_MODE_LINE;
+    Vision_Mode_t vision_mode = VISION_MODE_MINEFIELD;
 
     ui_init(UI_PAGE_REMOTE);
 
     while (true) {
+        gps_position_update(time_ms);
         ui_update(&ctrl, &nav_input, &nav_output, &nav_state, &vision, vision_mode);
         system_delay_ms(10);
+        time_ms += 10u;
     }
 }
 
@@ -60,7 +80,10 @@ int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
     debug_info_init();
+    cm7_1_wait_for_cm7_0_ready();
+    zf_log(0, "CM7_1 booted.");
     remote_debug_init();
+    gps_shared_clear();                 // GPS disabled: keep UART2 for LoRa remote.
     interrupt_global_enable(0);
 
     ui_core1_task();

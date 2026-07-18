@@ -3,8 +3,8 @@
 
 #include "nav_engine.h"
 
-#define NAV_RECORD_MAX_KEYPOINTS  16u
-#define NAV_RECORD_MAX_SEGMENTS   32u
+#define NAV_RECORD_MAX_KEYPOINTS  64u
+#define NAV_RECORD_MAX_SEGMENTS   64u
 
 typedef enum {
     NAV_ROUTE_IDLE = 0,
@@ -14,6 +14,9 @@ typedef enum {
 } Nav_Route_Mode_t;
 
 typedef struct {
+    /* Route-local coordinates: origin = record start, +x = start yaw. */
+    float x_m;
+    float y_m;
     float distance_m;
     float yaw_rad;
     uint32 time_ms;
