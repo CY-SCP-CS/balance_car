@@ -10,10 +10,12 @@
 
 #define NAV_RECORD_STRAIGHT_SPEED  0.3f
 #define NAV_RECORD_CORNER_SPEED    0.18f
-#define NAV_RECORD_TURN_SPEED      0.0f
-#define NAV_RECORD_WAYPOINT_REACHED_M          0.06f
-#define NAV_RECORD_WAYPOINT_PASSED_M           0.12f
-#define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.06f
+#define NAV_RECORD_TURN_SPEED      0.09f
+#define NAV_RECORD_WAYPOINT_REACHED_M          0.01f
+#define NAV_RECORD_WAYPOINT_PASSED_M           0.02f
+#define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.015f
+#define NAV_RECORD_CROSSTRACK_GAIN             2.0f
+#define NAV_RECORD_CROSSTRACK_LIMIT_RAD        (20.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
 
@@ -325,13 +327,16 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float target_x;
         float target_y;
         float target_yaw;
-        float target_bearing;
+        float target_yaw_cmd;
         float segment_dx;
         float segment_dy;
         float segment_distance;
         float target_dx;
         float target_dy;
         float target_distance;
+        float segment_yaw;
+        float cross_track_error;
+        float yaw_correction;
         float yaw_error;
         float abs_yaw_error;
 
@@ -374,8 +379,15 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             return out;
         }
 
-        target_bearing = atan2f(target_dy, target_dx);
-        yaw_error = nav_wrap_pi(target_bearing - input->yaw_rad);
+        segment_yaw = atan2f(segment_dy, segment_dx);
+        cross_track_error =
+            -sinf(segment_yaw) * (input->x_m - prev_x) +
+             cosf(segment_yaw) * (input->y_m - prev_y);
+        yaw_correction = clamp(-NAV_RECORD_CROSSTRACK_GAIN * cross_track_error,
+                               -NAV_RECORD_CROSSTRACK_LIMIT_RAD,
+                               NAV_RECORD_CROSSTRACK_LIMIT_RAD);
+        target_yaw_cmd = nav_wrap_pi(segment_yaw + yaw_correction);
+        yaw_error = nav_wrap_pi(target_yaw_cmd - input->yaw_rad);
         abs_yaw_error = fabsf(yaw_error);
 
         if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
@@ -388,7 +400,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         }
 
         out.target_yaw_valid = true;
-        out.target_yaw_rad = target_bearing;
+        out.target_yaw_rad = target_yaw_cmd;
         out.region = NAV_REGION_NORMAL;
         return out;
     }
