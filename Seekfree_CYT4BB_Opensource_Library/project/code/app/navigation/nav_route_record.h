@@ -3,8 +3,8 @@
 
 #include "nav_engine.h"
 
-#define NAV_RECORD_MAX_KEYPOINTS  16u
-#define NAV_RECORD_MAX_SEGMENTS   32u
+#define NAV_RECORD_MAX_KEYPOINTS  64u
+#define NAV_RECORD_MAX_SEGMENTS   64u
 
 typedef enum {
     NAV_ROUTE_IDLE = 0,

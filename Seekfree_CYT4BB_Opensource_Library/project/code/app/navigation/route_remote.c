@@ -98,7 +98,9 @@ void route_remote_update(const Nav_Input_t *input)
 
         if (state.mode == NAV_ROUTE_RECORDING) {
             if (remote_key_rising(remote, ROUTE_RECORD_KEY)) {
-                (void)nav_route_record_keypoint(input);
+                if (!nav_route_record_keypoint(input)) {
+                    buzzer_beep(BEEP_ERROR);
+                }
             }
         }
         return;
@@ -107,7 +109,9 @@ void route_remote_update(const Nav_Input_t *input)
     if (record_switch_falling) {
         state = nav_route_record_get_state();
         if (state.mode == NAV_ROUTE_RECORDING) {
-            (void)nav_route_record_keypoint(input);
+            if (!nav_route_record_keypoint(input)) {
+                buzzer_beep(BEEP_ERROR);
+            }
             if (nav_route_record_finish()) {
                 buzzer_beep(BEEP_LONG);
             }

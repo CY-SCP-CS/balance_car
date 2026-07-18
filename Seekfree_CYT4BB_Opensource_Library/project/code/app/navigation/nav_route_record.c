@@ -6,11 +6,13 @@
 #include <stddef.h>
 
 #include "../../common/utils.h"
+#include "../../hmi/indicator/led_buzzer.h"
 
-#define NAV_RECORD_STRAIGHT_SPEED  0.5f
+#define NAV_RECORD_STRAIGHT_SPEED  0.3f
 #define NAV_RECORD_CORNER_SPEED    0.18f
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_WAYPOINT_REACHED_M          0.12f
+#define NAV_RECORD_WAYPOINT_PASSED_M           0.30f
 #define NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M 0.06f
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
@@ -140,6 +142,12 @@ static bool waypoint_passed(float prev_x,
     }
 
     return (vx * wx + vy * wy) >= segment_len_sq;
+}
+
+static void replay_advance_waypoint(void)
+{
+    g_record_state.replay_index++;
+    buzzer_beep(BEEP_SHORT);
 }
 
 void nav_route_record_notify_navigation_stopped(bool finished,
@@ -337,7 +345,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         if (segment_distance < NAV_RECORD_HEADING_WAYPOINT_DISTANCE_M) {
             yaw_error = nav_wrap_pi(target_yaw - input->yaw_rad);
             if (fabsf(yaw_error) <= cfg.yaw_tolerance_rad) {
-                g_record_state.replay_index++;
+                replay_advance_waypoint();
                 continue;
             }
 
@@ -354,13 +362,14 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                                 target_dy * target_dy);
 
         if (target_distance <= reach_radius ||
-            waypoint_passed(prev_x,
-                            prev_y,
-                            target_x,
-                            target_y,
-                            input->x_m,
-                            input->y_m)) {
-            g_record_state.replay_index++;
+            (target_distance <= NAV_RECORD_WAYPOINT_PASSED_M &&
+             waypoint_passed(prev_x,
+                             prev_y,
+                             target_x,
+                             target_y,
+                             input->x_m,
+                             input->y_m))) {
+            replay_advance_waypoint();
             continue;
         }
 

@@ -10,6 +10,7 @@
 #define REMOTE_SPEED_ACCEL     3.0f
 #define REMOTE_SPEED_DECEL     5.0f
 #define REMOTE_SPEED_STOP_EPS  0.002f
+#define REMOTE_ROUTE_PLAY_SWITCH 2u
 
 static Remote_State_t g_remote_state;
 static uint16 g_remote_timeout_ms;
@@ -159,6 +160,13 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     ctrl->yaw_target_valid = false;
     ctrl->yaw_target_rad = 0.0f;
     ctrl->on_bridge = (g_remote_state.switch_key[0] != 0u);
+
+    if (g_remote_state.switch_key[REMOTE_ROUTE_PLAY_SWITCH] != 0u) {
+        g_remote_velocity_target = 0.0f;
+        ctrl->velocity_cmd = 0.0f;
+        ctrl->steering_cmd = 0.0f;
+        return;
+    }
 
     /* 依据遥控协议注释：
      * joystick[2] = 右摇杆 X（左右）

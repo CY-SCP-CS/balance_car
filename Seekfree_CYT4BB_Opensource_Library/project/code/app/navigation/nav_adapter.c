@@ -26,8 +26,6 @@ static float nav_limit(float value, float limit)
 
 void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
 {
-    static float yaw_zero = 0.0f;
-    static bool yaw_zero_set = false;
     static bool odom_set = false;
     static float last_odom_distance = 0.0f;
     static float fused_distance = 0.0f;
@@ -37,7 +35,7 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     static float gps_yaw_offset = 0.0f;
     static float gps_yaw_correction = 0.0f;
     static uint32 last_gps_sequence = 0u;
-    float imu_yaw;
+    float odom_yaw;
     float odom_distance;
     float odom_x;
     float odom_y;
@@ -47,17 +45,12 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
         return;
     }
 
-    if (!yaw_zero_set) {
-        yaw_zero = ctrl->body_yaw;
-        yaw_zero_set = true;
-    }
-
-    imu_yaw = nav_wrap_pi(ctrl->body_yaw - yaw_zero);
     input->time_ms += NAV_LOOP_DT_MS;
 
     odom_distance = robot_control_get_distance();
     odom_x = robot_control_get_x();
     odom_y = robot_control_get_y();
+    odom_yaw = robot_control_get_yaw();
     if (!odom_set) {
         last_odom_distance = odom_distance;
         fused_distance = odom_distance;
@@ -101,11 +94,11 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
                 gps_yaw = nav_wrap_pi(NAV_GPS_YAW_SIGN * gps_yaw);
 
                 if (!gps_yaw_anchor_set) {
-                    gps_yaw_offset = nav_wrap_pi(imu_yaw - gps_yaw);
+                    gps_yaw_offset = nav_wrap_pi(odom_yaw - gps_yaw);
                     gps_yaw_anchor_set = true;
                 } else {
                     float gps_yaw_relative = nav_wrap_pi(gps_yaw + gps_yaw_offset);
-                    float yaw_error = nav_wrap_pi(gps_yaw_relative - imu_yaw);
+                    float yaw_error = nav_wrap_pi(gps_yaw_relative - odom_yaw);
 
                     gps_yaw_correction = nav_wrap_pi(gps_yaw_correction +
                                                      yaw_gain * yaw_error);
@@ -119,7 +112,7 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
         }
     }
 
-    input->yaw_rad = nav_wrap_pi(imu_yaw + gps_yaw_correction);
+    input->yaw_rad = nav_wrap_pi(odom_yaw + gps_yaw_correction);
     input->x_m = odom_x;
     input->y_m = odom_y;
     input->distance_m = fused_distance;
