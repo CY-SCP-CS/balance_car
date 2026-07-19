@@ -31,6 +31,11 @@ typedef enum {
     NAV_LANDMARK_STEP
 } Nav_Landmark_t;
 
+typedef enum {
+    NAV_ROUTE_POINT_ACTION_NONE = 0,
+    NAV_ROUTE_POINT_ACTION_ROTATE720
+} Nav_Route_Point_Action_t;
+
 typedef struct {
     Nav_Action_t action;
     float target_distance_m;
@@ -86,6 +91,9 @@ typedef struct {
     Nav_Region_t region;
     bool region_entered;
     bool region_exited;
+    bool waypoint_entered;
+    uint8 waypoint_index;
+    Nav_Route_Point_Action_t waypoint_action;
 } Nav_Output_t;
 
 void         nav_init                   (const Nav_Config_t *config);

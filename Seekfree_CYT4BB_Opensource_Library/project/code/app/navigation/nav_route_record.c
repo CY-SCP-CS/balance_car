@@ -70,6 +70,7 @@ static void record_keypoint_from_input(uint8 index, const Nav_Input_t *input)
     g_record_keypoints[index].yaw_rad = g_record_yaw_accum;
     g_record_keypoints[index].time_ms =
         (uint32)(input->time_ms - g_record_origin_time);
+    g_record_keypoints[index].action = NAV_ROUTE_POINT_ACTION_NONE;
 }
 
 static float keypoint_yaw_delta_from_start(uint8 index)
@@ -163,6 +164,17 @@ static void replay_advance_waypoint(void)
     buzzer_beep(BEEP_SHORT);
 }
 
+static void replay_fill_waypoint_event(Nav_Output_t *out, uint8 index)
+{
+    if (out == NULL || index >= g_record_state.keypoint_count) {
+        return;
+    }
+
+    out->waypoint_entered = true;
+    out->waypoint_index = index;
+    out->waypoint_action = g_record_keypoints[index].action;
+}
+
 static void replay_reset_final_brake(void)
 {
     g_replay_final_braking = false;
@@ -239,6 +251,13 @@ bool nav_route_record_start(const Nav_Input_t *input)
 
 bool nav_route_record_keypoint(const Nav_Input_t *input)
 {
+    return nav_route_record_keypoint_with_action(input,
+                                                 NAV_ROUTE_POINT_ACTION_NONE);
+}
+
+bool nav_route_record_keypoint_with_action(const Nav_Input_t *input,
+                                           Nav_Route_Point_Action_t action)
+{
     if (input == NULL || g_record_state.mode != NAV_ROUTE_RECORDING) {
         return false;
     }
@@ -250,6 +269,7 @@ bool nav_route_record_keypoint(const Nav_Input_t *input)
 
     uint8 index = g_record_state.keypoint_count;
     record_keypoint_from_input(index, input);
+    g_record_keypoints[index].action = action;
     g_record_state.keypoint_count++;
 
     return true;
@@ -417,7 +437,12 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         segment_yaw = atan2f(segment_dy, segment_dx);
 
         if (segment_distance < NAV_RECORD_SHORT_SEGMENT_M) {
+            replay_fill_waypoint_event(&out, cur_index);
             replay_advance_waypoint();
+            if (out.waypoint_action != NAV_ROUTE_POINT_ACTION_NONE) {
+                replay_hold_current_yaw(&out, input);
+                return out;
+            }
             continue;
         }
 
@@ -433,15 +458,19 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                                           input->y_m);
 
         if (final_waypoint && passed_waypoint) {
+            Nav_Output_t brake_out;
             replay_advance_waypoint();
             g_replay_final_braking = true;
             g_replay_final_brake_start_time = input->time_ms;
             g_replay_final_brake_yaw = segment_yaw;
-            return replay_final_brake_update(input);
+            brake_out = replay_final_brake_update(input);
+            replay_fill_waypoint_event(&brake_out, cur_index);
+            return brake_out;
         }
 
         if (!final_waypoint &&
             (target_distance <= reach_radius || passed_waypoint)) {
+            replay_fill_waypoint_event(&out, cur_index);
             replay_advance_waypoint();
             replay_hold_current_yaw(&out, input);
             return out;
