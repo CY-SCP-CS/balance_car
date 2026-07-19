@@ -57,7 +57,7 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       42.0f, 6.2f, 0.177f, ROBOT_CONTROL_DT, 2000.0f, 500.0f);
+    pid_init(&g_speed_pid,       3000.0f, 6.2f, 0.177f, ROBOT_CONTROL_DT, 4000.0f, 1000.0f);
     //偏航串级: 外环角度, 内环角速度
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
@@ -116,7 +116,6 @@ void robot_control_reset_balance_pid(void){
     pid_reset(&g_pitch_angle_pid);
     pid_reset(&g_pitch_gyro_pid);
     pid_reset(&g_speed_pid);
-    pitch_balance_reset_statics();
 }
 
 void robot_control_reset_leg_speed_pid(void){
@@ -241,7 +240,7 @@ void control_task(void){
 
     bool airborne = jump_is_airborne();
 
-    /* ── 速度指令覆盖: pitch_balance_control 和 leg_cmd_solve 共用 ── */
+    /* ── 速度指令覆盖: balance_control 和 leg_cmd_solve 共用 ── */
     if (!airborne) {
         track_bridge_climb_apply(&cmd_local);
         if (track_bumpy_is_active()) {
@@ -257,8 +256,13 @@ void control_task(void){
 
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
-        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd, cmd_local.target_speed);
+        {
+            float balance_pwm = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid);
+            float speed_pwm   = speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pwm_base = balance_pwm + speed_pwm;
+            g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
+            g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
+        }
 
         /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
         track_rotate720_update(&sensor_local, &cmd_local);
@@ -314,8 +318,13 @@ void control_task(void){
         }
     } else {
         /* 空中: 轮子反作用力矩提供部分身体稳定 */
-        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd, 0.0f);
+        {
+            float balance_pwm = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid);
+            float speed_pwm   = speed_control(&sensor_local, &g_speed_pid, 0.0f);
+            float pwm_base = balance_pwm + speed_pwm;
+            g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
+            g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
+        }
         g_motor_cmd.left_motor_pwm  = (int)(g_motor_cmd.left_motor_pwm  * AIR_BALANCE_GAIN);
         g_motor_cmd.right_motor_pwm = (int)(g_motor_cmd.right_motor_pwm * AIR_BALANCE_GAIN);
     }
