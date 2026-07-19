@@ -7,13 +7,14 @@
  * 返回平衡 PWM, 由调用方与速度环输出叠加
  * ============================================================================ */
 float balance_control(const Sensor_data_t *sensor,
-    PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro)
+    PID_Controller_t *pid_angle, PID_Controller_t *pid_gyro,
+    float pitch_target)
 {
     float angle_cur = sensor->angle_pitch - PITCH_ANGLE_OFFSET_DEG * DEG_TO_RAD;
     float gyro_cur  = sensor->gyro_pitch;
 
-    /* 角度外环: 目标角度 = 0 (直立点) */
-    float gyro_target = pid_calculate(pid_angle, 0.0f, angle_cur);
+    /* 角度外环: 目标角度 = pitch_target (速度环给出的倾角需求) */
+    float gyro_target = pid_calculate(pid_angle, pitch_target, angle_cur);
 
     /* 角速度内环: 跟踪角度环输出的角速度目标 */
     float pwm = pid_calculate(pid_gyro, gyro_target, gyro_cur);
@@ -25,26 +26,20 @@ float balance_control(const Sensor_data_t *sensor,
 }
 
 /* ============================================================================
- * speed_control — 独立速度控制
- * 满频运行 (1000Hz), 与平衡环并联叠加
- * 刹车: 强比例前馈直接注入制动 PWM, 绕过 PID 慢速积分
+ * speed_control — 速度环 → 身体倾角目标
+ * 满频运行 (1000Hz), 输出 pitch_target (rad) 供 balance_control 使用
+ * 正输出 = 前倾目标 (加速), 负输出 = 后仰目标 (减速)
  * ============================================================================ */
-#define BRAKE_FF_GAIN 7000.0f  /* 刹车前馈增益, 克服平衡环的反向推力 */
 
 float speed_control(const Sensor_data_t *sensor,
     PID_Controller_t *pid_speed, float target_speed)
 {
-    float speed_cur  = (sensor->motor_left_speed + sensor->motor_right_speed) / 2.0f;
-    float speed_norm = speed_cur / 60.0f;  /* 归一化到与 target_speed 同一量纲 */
+    float speed_cur   = (sensor->motor_left_speed + sensor->motor_right_speed) / 2.0f;
+    float speed_norm  = speed_cur / 60.0f;       /* 车轮速度归一化 [-1, 1] */
+    float target_norm = target_speed / 3.3f;      /* 目标速度归一化 [-1, 1], 与 speed_norm 同尺度 */
 
-    float pwm = pid_calculate(pid_speed, target_speed, speed_norm);
-
-    /* 刹车前馈注入: 目标=0 且车速>阈值时, 叠加强比例制动 */
-    if (fabsf(target_speed) < 0.01f && fabsf(speed_norm) > 0.03f) {
-        pwm += -BRAKE_FF_GAIN * speed_norm;
-    }
-
-    return pwm;
+    float pitch_target = pid_calculate(pid_speed, target_norm, speed_norm);
+    return pitch_target;
 }
 
 /* ============================================================================

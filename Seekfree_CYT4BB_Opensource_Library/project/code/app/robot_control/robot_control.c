@@ -57,13 +57,13 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       3000.0f, 6.2f, 0.177f, ROBOT_CONTROL_DT, 4000.0f, 1000.0f);
+    pid_init(&g_speed_pid,       -0.32f, -0.06f, -0.00f, ROBOT_CONTROL_DT, 0.48f, 0.082f);  /* 输出倾角(rad): ±8°限幅, ±3°积分 */
     //偏航串级: 外环角度, 内环角速度
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
     pid_init(&g_leg_speed_pid, 552.0f, 0.97f, 3.81f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
-    pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_roll_pid,  -8.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
     leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
@@ -257,9 +257,8 @@ void control_task(void){
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
         {
-            float balance_pwm = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid);
-            float speed_pwm   = speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
-            float pwm_base = balance_pwm + speed_pwm;
+            float pitch_target = jump_is_active() ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
             g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
             g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
         }
@@ -317,11 +316,9 @@ void control_task(void){
             cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
         }
     } else {
-        /* 空中: 轮子反作用力矩提供部分身体稳定 */
+        /* 空中: 关闭速度环, 只保直立, 轮子反作用力矩稳定身体 */
         {
-            float balance_pwm = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid);
-            float speed_pwm   = speed_control(&sensor_local, &g_speed_pid, 0.0f);
-            float pwm_base = balance_pwm + speed_pwm;
+            float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, 0.0f);
             g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
             g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
         }
