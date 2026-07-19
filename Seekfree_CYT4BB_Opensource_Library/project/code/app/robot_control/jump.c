@@ -23,18 +23,20 @@ typedef enum {
 #define JUMP_CUSHION_DELTA   90.0f   /* 落地相对缓冲深度 */
 
 /* 前向推进 */
-#define JUMP_FORWARD_BIAS   -0.0f   /* 蹬地时脚在髋后方的偏移 (mm) *///颠簸路段为0
+#define JUMP_FORWARD_BIAS   -90.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
 
 /* 时序 (1kHz cycles) */
 #define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
 #define MULTI_STABILIZE_DURATION 300    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
 #define SQUAT_DURATION          400
+#define MULTI_SQUAT_DURATION    200     /* 多级跳跃时加速下蹲 */
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
 #define LAUNCH_TIMEOUT        200
 #define TUCK_RAMP_MS           30
 #define REACH_RAMP_MS          30
 #define CUSHION_RAMP_MS        30
 #define CUSHION_HOLD_MS       200
+#define MULTI_CUSHION_HOLD_MS   50     /* 多级跳跃时快速缓冲 */
 #define CUSHION_RELEASE_MS    400
 #define BALANCE_RAMP_MS        50
 
@@ -142,14 +144,17 @@ static void run_squat(const Sensor_data_t *sensor,
         g_base_y_right = right->y;
     }
 
-    float t = (float)g_cycle / (float)SQUAT_DURATION;
+    bool is_multi = (g_jump_remaining != g_jump_total);
+    uint16_t duration = is_multi ? MULTI_SQUAT_DURATION : SQUAT_DURATION;
+
+    float t = (float)g_cycle / (float)duration;
     if (t > 1.0f) t = 1.0f;
     float dy = lerp(0.0f, JUMP_SQUAT_Y, t);
 
     left->y  = g_base_y_left  + dy;
     right->y = g_base_y_right + dy;
 
-    if (g_cycle >= SQUAT_DURATION) {
+    if (g_cycle >= duration) {
         enter_state(JUMP_LAUNCH);
     }
 }
@@ -246,17 +251,17 @@ static void run_land(const Sensor_data_t *sensor,
 {
     (void)sensor;
     float y;
+    bool is_multi = (g_jump_remaining > 1);
+    uint16_t hold_ms  = is_multi ? MULTI_CUSHION_HOLD_MS : CUSHION_HOLD_MS;
+    uint16_t phase_ab = CUSHION_RAMP_MS + hold_ms;
 
     if (g_cycle <= CUSHION_RAMP_MS) {
-        /* A: 从触地位置渐变收腿 */
         float t = (float)g_cycle / (float)CUSHION_RAMP_MS;
         y = lerp(g_land_y0, g_land_y0 + JUMP_CUSHION_DELTA, t);
-    } else if (g_cycle <= CUSHION_RAMP_MS + CUSHION_HOLD_MS) {
-        /* B: 保持缓冲位 */
+    } else if (g_cycle <= phase_ab) {
         y = g_land_y0 + JUMP_CUSHION_DELTA;
     } else {
-        /* C: 渐变回 0 */
-        uint16_t rel = g_cycle - CUSHION_RAMP_MS - CUSHION_HOLD_MS;
+        uint16_t rel = g_cycle - phase_ab;
         float t = (float)rel / (float)CUSHION_RELEASE_MS;
         if (t > 1.0f) t = 1.0f;
         y = lerp(g_land_y0 + JUMP_CUSHION_DELTA, 0.0f, t);
@@ -265,14 +270,15 @@ static void run_land(const Sensor_data_t *sensor,
     left->y  = y;
     right->y = y;
 
-    if (g_cycle >= CUSHION_RAMP_MS + CUSHION_HOLD_MS + CUSHION_RELEASE_MS) {
-        /* 清除 LAND 阶段横滚 PID 积分饱和, 防止退出后双腿不对称 */
-        robot_control_reset_leg_speed_pid();
-        if (g_jump_remaining > 1) {
-            /* 还有剩余跳跃: 回到 STABILIZE 走完整流程, 保证每跳一致 */
+    if (is_multi) {
+        if (g_cycle >= phase_ab) {
+            robot_control_reset_leg_speed_pid();
             g_jump_remaining--;
-            enter_state(JUMP_STABILIZE);
-        } else {
+            enter_state(JUMP_SQUAT);
+        }
+    } else {
+        if (g_cycle >= phase_ab + CUSHION_RELEASE_MS) {
+            robot_control_reset_leg_speed_pid();
             g_jump_remaining = 0;
             g_jump_total     = 0;
             enter_state(JUMP_IDLE);
