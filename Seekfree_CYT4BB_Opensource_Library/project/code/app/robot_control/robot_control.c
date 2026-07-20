@@ -246,18 +246,12 @@ void control_task(void){
         if (track_bumpy_is_active()) {
             cmd_local.target_speed = track_bumpy_get_speed();
         }
-        if (jump_is_stabilizing() || jump_is_squatting()) {
-            float app_speed = jump_get_approach_speed();
-            if (app_speed != 0.0f) {
-                cmd_local.target_speed = app_speed;
-            }
-        }
     }
 
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
         {
-            float pitch_target = jump_is_active() ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pitch_target = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
             float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
             g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
             g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);

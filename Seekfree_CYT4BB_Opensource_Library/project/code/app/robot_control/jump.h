@@ -47,10 +47,11 @@ bool jump_is_stabilizing(void);
 /* ─── 是否在下蹲蓄力阶段 ── */
 bool jump_is_squatting(void);
 
-/* ─── 是否在落地缓冲阶段 (轮子应锁死, 防前冲) ──
- *  LAND 阶段的收腿缓冲 + 保持期间返回 true, 释放阶段起返回 false.
+/* ─── 是否在跳跃结束后冷却期 ───
+ *  跳跃进入 IDLE 后 1500ms 内返回 true, 调用者据此继续关闭 g_speed_pid。
+ *  冷却期内 g_leg_speed_pid 正常运行, 保持腿平衡。
  */
-bool jump_is_landing_cushion(void);
+bool jump_is_in_cooldown(void);
 
 /* ─── 获取起跳前的前向接近速度 ───
  *  返回 jump_start() 传入的 target_speed, 调用者在 STABILIZE 阶段施加.
