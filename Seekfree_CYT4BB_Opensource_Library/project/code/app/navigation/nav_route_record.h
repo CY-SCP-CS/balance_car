@@ -20,6 +20,7 @@ typedef struct {
     float distance_m;
     float yaw_rad;
     uint32 time_ms;
+    Nav_Route_Point_Action_t action;
 } Nav_Keypoint_t;
 
 typedef struct {
@@ -32,6 +33,8 @@ typedef struct {
 
 bool nav_route_record_start(const Nav_Input_t *input);
 bool nav_route_record_keypoint(const Nav_Input_t *input);
+bool nav_route_record_keypoint_with_action(const Nav_Input_t *input,
+                                           Nav_Route_Point_Action_t action);
 bool nav_route_record_finish(void);
 void nav_route_record_reset(void);
 bool nav_route_record_load_saved_history(uint8 history_index);

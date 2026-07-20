@@ -11,9 +11,12 @@
 #define ROT720_TARGET     (4.0f * M_PI)   /* 720° = 4π rad */
 #define ROT720_MARGIN     (0.0f * M_PI)   /* 10% 冗余 ≈ 72° */
 #define ROT720_LEAN_GAIN  0.35f           /* 压弯系数 (原0.2) */
+#define ROT720_STOP_SPEED_MPS   0.03f
+#define ROT720_STOP_HOLD_TIME_S 0.08f
 
 typedef enum {
     ROTATE720_IDLE = 0,
+    ROTATE720_BRAKING,
     ROTATE720_ACTIVE,
     ROTATE720_DONE
 } Rotate720State_t;
@@ -21,26 +24,42 @@ typedef enum {
 static Rotate720State_t g_rotate720_state = ROTATE720_IDLE;
 static float            g_rotate720_accum = 0.0f;
 static float            g_rotate720_target = 0.0f;
+static float            g_rotate720_stop_hold_s = 0.0f;
+static bool             g_rotate720_target_valid = false;
+
+static float rotate720_forward_speed_mps(const Sensor_data_t *sensor)
+{
+    float wheel_radius_m = LEG_WHEEL_RADIUS * 0.001f;
+    float left_mps = sensor->motor_left_speed * wheel_radius_m;
+    float right_mps = sensor->motor_right_speed * wheel_radius_m;
+
+    return fabsf(0.5f * (left_mps + right_mps));
+}
 
 void track_rotate720_init(void)
 {
     g_rotate720_state  = ROTATE720_IDLE;
     g_rotate720_accum  = 0.0f;
     g_rotate720_target = 0.0f;
+    g_rotate720_stop_hold_s = 0.0f;
+    g_rotate720_target_valid = false;
 }
 
 void track_rotate720_start(void)
 {
     if (g_rotate720_state == ROTATE720_IDLE) {
-        g_rotate720_state  = ROTATE720_ACTIVE;
+        g_rotate720_state  = ROTATE720_BRAKING;
         g_rotate720_accum  = 0.0f;
         g_rotate720_target = 0.0f;
+        g_rotate720_stop_hold_s = 0.0f;
+        g_rotate720_target_valid = false;
     }
 }
 
 bool track_rotate720_is_active(void)
 {
-    return (g_rotate720_state == ROTATE720_ACTIVE);
+    return (g_rotate720_state == ROTATE720_BRAKING ||
+            g_rotate720_state == ROTATE720_ACTIVE);
 }
 
 bool track_rotate720_is_done(void)
@@ -53,14 +72,41 @@ void track_rotate720_reset(void)
     g_rotate720_state  = ROTATE720_IDLE;
     g_rotate720_accum  = 0.0f;
     g_rotate720_target = 0.0f;
+    g_rotate720_stop_hold_s = 0.0f;
+    g_rotate720_target_valid = false;
 }
 
 void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
 {
-    if (g_rotate720_state != ROTATE720_ACTIVE) return;
+    if (g_rotate720_state != ROTATE720_BRAKING &&
+        g_rotate720_state != ROTATE720_ACTIVE) {
+        return;
+    }
 
-    /* 首周期用当前 yaw 初始化移动目标 */
-    if (g_rotate720_accum == 0.0f) {
+    cmd->target_speed = 0.0f;
+    cmd->target_distance = 0.0f;
+
+    if (!g_rotate720_target_valid) {
+        g_rotate720_target = sensor->angle_yaw;
+        g_rotate720_target_valid = true;
+    }
+
+    if (g_rotate720_state == ROTATE720_BRAKING) {
+        cmd->target_direction = g_rotate720_target;
+        cmd->target_roll = 0.0f;
+
+        if (rotate720_forward_speed_mps(sensor) <= ROT720_STOP_SPEED_MPS) {
+            g_rotate720_stop_hold_s += ROBOT_CONTROL_DT;
+        } else {
+            g_rotate720_stop_hold_s = 0.0f;
+        }
+
+        if (g_rotate720_stop_hold_s < ROT720_STOP_HOLD_TIME_S) {
+            return;
+        }
+
+        g_rotate720_state = ROTATE720_ACTIVE;
+        g_rotate720_accum = 0.0f;
         g_rotate720_target = sensor->angle_yaw;
     }
 

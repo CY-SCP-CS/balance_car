@@ -9,6 +9,7 @@
 #define REMOTE_CMD_DT_S        0.001f
 #define REMOTE_SPEED_ACCEL     3.0f
 #define REMOTE_SPEED_DECEL     5.0f
+#define REMOTE_SPEED_BRAKE     12.0f
 #define REMOTE_SPEED_STOP_EPS  0.002f
 #define REMOTE_ROUTE_PLAY_SWITCH 2u
 
@@ -176,8 +177,10 @@ void remote_comm_update(Ctrl_Input_t *ctrl)
     float steering_cmd = -g_remote_filtered_joystick[2];
     float speed_rate = REMOTE_SPEED_ACCEL;
 
-    if (velocity_cmd * g_remote_velocity_target < 0.0f ||
-        remote_absf(velocity_cmd) < remote_absf(g_remote_velocity_target)) {
+    if (velocity_cmd * g_remote_velocity_target < 0.0f) {
+        speed_rate = REMOTE_SPEED_BRAKE;
+    } else if (remote_absf(velocity_cmd) <
+               remote_absf(g_remote_velocity_target)) {
         speed_rate = REMOTE_SPEED_DECEL;
     }
 

@@ -153,7 +153,20 @@ int main(void)
                         break;
                     }
                 }
+                if (nav_out.waypoint_entered &&
+                    nav_out.waypoint_action ==
+                    NAV_ROUTE_POINT_ACTION_ROTATE720) {
+                    track_rotate720_reset();
+                    track_rotate720_start();
+                }
             }
+        }
+
+        if (track_rotate720_is_active()) {
+            g_ctrl.velocity_cmd = 0.0f;
+        }
+        if (track_rotate720_is_done()) {
+            track_rotate720_reset();
         }
 
         small_driver_get_angle(&small_driver_value);
