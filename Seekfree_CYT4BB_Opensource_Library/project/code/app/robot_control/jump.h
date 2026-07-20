@@ -4,6 +4,7 @@
 #include "../../common/types.h"
 #include "types.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 /* ─── 初始化 ───
  *  在 robot_control_init() 中调用一次, 置为空闲状态。
@@ -11,10 +12,14 @@
 void jump_init(void);
 
 /* ─── 启动跳跃 ───
- *  仅在 JUMP_IDLE 时有效, 触发后状态机从 SQUAT 开始运行。
- *  target_speed - 预留前进速度 (mm/s), 暂不生效
+ *  仅在 JUMP_IDLE 时有效, 触发后状态机从 STABILIZE 开始运行。
+ *  target_speed - 前向接近速度 (mm/s), 在 STABILIZE/SQUAT 阶段施加
+ *  count         - 连续跳跃次数 (1~255), 默认 1 为单次跳跃
  */
-void jump_start(float target_speed);
+void jump_start(float target_speed, uint8_t count);
+
+/* ─── 查询剩余跳跃次数 ── */
+uint8_t jump_get_remaining(void);
 
 /* ─── 紧急中止 ───
  *  任何非空闲状态下调用, 恢复腿 PID 默认增益后进入 IDLE。
@@ -41,6 +46,11 @@ bool jump_is_stabilizing(void);
 
 /* ─── 是否在下蹲蓄力阶段 ── */
 bool jump_is_squatting(void);
+
+/* ─── 是否在落地缓冲阶段 (轮子应锁死, 防前冲) ──
+ *  LAND 阶段的收腿缓冲 + 保持期间返回 true, 释放阶段起返回 false.
+ */
+bool jump_is_landing_cushion(void);
 
 /* ─── 获取起跳前的前向接近速度 ───
  *  返回 jump_start() 传入的 target_speed, 调用者在 STABILIZE 阶段施加.

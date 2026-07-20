@@ -15,6 +15,9 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
+/* 手动测试开关: 标定完成后直接激活颠簸路段, 不依赖导航 */
+#define BUMPY_MANUAL_TEST 0
+
 #define CM7_0_READY_MAGIC 0x43373031u
 
 #pragma location = 0x28006C00
@@ -81,8 +84,15 @@ int main(void)
     }
     zf_log(0, "Angle calibration OK.");
 
+#if BUMPY_MANUAL_TEST
+    track_bumpy_activate();
+    track_bumpy_apply_compliance();
+    zf_log(0, "Bumpy manual test started (Mode A).");
+#else
     //track_rotate720_start();   // 测试旋转720
-    // jump_start(-0.1f);
+#endif
+    jump_start(-0.20f, 3);//三级台阶
+    //jump_start(-1.20f, 1);//直接跳过颠簸
 
     while(true)
     {
@@ -112,7 +122,7 @@ int main(void)
                         track_rotate720_start();
                         break;
                     case NAV_REGION_JUMP:
-                        jump_start(0.0f);
+                        jump_start(-0.15f, 3);
                         break;
                     case NAV_REGION_SINGLE_BRIDGE:
                     case NAV_REGION_UPHILL:
@@ -120,6 +130,7 @@ int main(void)
                         break;
                     case NAV_REGION_SPEED_BUMP:
                         track_bumpy_activate();
+                        track_bumpy_apply_compliance();
                         break;
                     default:
                         break;
@@ -132,6 +143,7 @@ int main(void)
                         track_bridge_climb_deactivate();
                         break;
                     case NAV_REGION_SPEED_BUMP:
+                        track_bumpy_restore_stiffness();
                         track_bumpy_deactivate();
                         break;
                     case NAV_REGION_ROTATE:

@@ -110,13 +110,13 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       -0.0f, 0.0f, 0.00f, ROBOT_CONTROL_DT, 2000.0f, 500.0f);
+    pid_init(&g_speed_pid,       -0.32f, -0.06f, -0.00f, ROBOT_CONTROL_DT, 0.48f, 0.082f);  /* 输出倾角(rad): ±8°限幅, ±3°积分 */
     //偏航串级: 外环角度, 内环角速度
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
     pid_init(&g_leg_speed_pid, 552.0f, 0.97f, 3.81f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
-    pid_init(&g_leg_roll_pid,  -20.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_roll_pid,  -8.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
     leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
@@ -169,7 +169,6 @@ void robot_control_reset_balance_pid(void){
     pid_reset(&g_pitch_angle_pid);
     pid_reset(&g_pitch_gyro_pid);
     pid_reset(&g_speed_pid);
-    pitch_balance_reset_statics();
 }
 
 void robot_control_reset_leg_speed_pid(void){
@@ -289,23 +288,42 @@ void control_task(void){
     Move_cmd_t     cmd_local   = g_move_cmd;
 
     if (!safety_check(&sensor_local, &g_motor_cmd)) {
-        /* 安全停机时恢复腿增益 (防止颠簸路段增益残留) */
-        track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
         return;
     }
 
     bool airborne = jump_is_airborne();
 
+    /* ── 速度指令覆盖: balance_control 和 leg_cmd_solve 共用 ── */
+    if (!airborne) {
+        track_bridge_climb_apply(&cmd_local);
+        if (track_bumpy_is_active()) {
+            cmd_local.target_speed = track_bumpy_get_speed();
+        }
+        if (jump_is_stabilizing() || jump_is_squatting()) {
+            float app_speed = jump_get_approach_speed();
+            if (app_speed != 0.0f) {
+                cmd_local.target_speed = app_speed;
+            }
+        }
+    }
+
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
-        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd);
-
-        /* ── 单边桥/爬坡速度覆盖 (leg_cmd_solve 之前) ── */
-        track_bridge_climb_apply(&cmd_local);
+        {
+            float pitch_target = jump_is_active() ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
+            g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
+            g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
+        }
 
         /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
         track_rotate720_update(&sensor_local, &cmd_local);
+
+        /* ── 颠簸路段: 交替偏航 + 单侧收腿, 单轮过条 ── */
+        if (track_bumpy_is_active()) {
+            track_bumpy_update(&sensor_local);
+            cmd_local.target_direction += track_bumpy_get_yaw_bias();
+        }
 
         /* 旋转完成时复位 yaw PID, 锁定当前朝向 */
         {
@@ -351,9 +369,12 @@ void control_task(void){
             cmd_local.target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
         }
     } else {
-        /* 空中: 轮子反作用力矩提供部分身体稳定 */
-        pitch_balance_control(&sensor_local, &g_speed_pid, &g_pitch_angle_pid,
-            &g_pitch_gyro_pid, &g_motor_cmd);
+        /* 空中: 关闭速度环, 只保直立, 轮子反作用力矩稳定身体 */
+        {
+            float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, 0.0f);
+            g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
+            g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
+        }
         g_motor_cmd.left_motor_pwm  = (int)(g_motor_cmd.left_motor_pwm  * AIR_BALANCE_GAIN);
         g_motor_cmd.right_motor_pwm = (int)(g_motor_cmd.right_motor_pwm * AIR_BALANCE_GAIN);
     }
@@ -389,11 +410,10 @@ void control_task(void){
         jump_leg_overlay(&foot_position_left, &foot_position_right, &sensor_local);
     }
 
-    /* ── 颠簸路段: 收腿提高离地间隙 ── */
+    /* ── 颠簸路段: 单侧收腿, 交替爬升 ── */
     if (track_bumpy_is_active()) {
-        float y_clear = track_bumpy_get_clearance_offset();
-        foot_position_left.y  += y_clear;
-        foot_position_right.y += y_clear;
+        foot_position_left.y  += track_bumpy_get_left_lift();
+        foot_position_right.y += track_bumpy_get_right_lift();
     }
 
     /* ── 腿控制 ── */
@@ -403,18 +423,6 @@ void control_task(void){
                     &foot_position_left, &foot_position_right,
                     &g_motor_cmd);
 #else
-    /* ── 颠簸路段: 腿增益调整为软悬挂 ── */
-    {
-        static bool was_bumpy = false;
-        bool is_bumpy = track_bumpy_is_active();
-        if (is_bumpy) {
-            track_bumpy_apply_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
-        } else if (was_bumpy) {
-            /* 仅在退出颠簸路段时恢复一次, 避免每周期覆盖 jump 的 launch 增益 */
-            track_bumpy_restore_leg_gains(&g_leg_left_pid, &g_leg_right_pid);
-        }
-        was_bumpy = is_bumpy;
-    }
 
     leg_offset_to_joint_target(LEG_LEFT,  &foot_position_left,  &g_leg_target_left);
     leg_offset_to_joint_target(LEG_RIGHT, &foot_position_right, &g_leg_target_right);

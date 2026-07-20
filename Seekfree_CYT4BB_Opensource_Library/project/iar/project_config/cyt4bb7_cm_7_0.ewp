@@ -1946,6 +1946,18 @@
                 </group>
             </group>
             <group>
+                <name>hmi</name>
+                <group>
+                    <name>indicator</name>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.c</name>
+                    </file>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.h</name>
+                    </file>
+                </group>
+            </group>
+            <group>
                 <name>interrupts</name>
                 <group>
                     <name>rev_b</name>
@@ -2058,18 +2070,6 @@
                 <file>
                     <name>$PROJ_DIR$\..\..\..\libraries\sdk\common\src\startup\startup_customize.h</name>
                 </file>
-            </group>
-            <group>
-                <name>hmi</name>
-                <group>
-                    <name>indicator</name>
-                    <file>
-                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.c</name>
-                    </file>
-                    <file>
-                        <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.h</name>
-                    </file>
-                </group>
             </group>
             <group>
                 <name>system</name>
