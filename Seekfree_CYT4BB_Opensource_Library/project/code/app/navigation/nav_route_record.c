@@ -12,7 +12,7 @@
 #define NAV_RECORD_CORNER_SPEED    0.18f
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_WAYPOINT_REACHED_M          0.03f
-#define NAV_RECORD_FINAL_BRAKE_SPEED           (-0.12f)
+#define NAV_RECORD_FINAL_BRAKE_SPEED           (-0.2f)
 #define NAV_RECORD_FINAL_BRAKE_TIME_MS         260u
 #define NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M  0.04f
 #define NAV_RECORD_SHORT_SEGMENT_M             0.015f
@@ -20,6 +20,11 @@
 #define NAV_RECORD_CROSSTRACK_LIMIT_RAD        (20.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
+#define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
+#define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
+#define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
+#define NAV_RECORD_ROTATE_CRAWL_SPEED          0.08f
+#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     (-0.10f)
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
@@ -191,6 +196,47 @@ static void replay_hold_current_yaw(Nav_Output_t *out, const Nav_Input_t *input)
     out->velocity_cmd = 0.0f;
     out->target_yaw_valid = true;
     out->target_yaw_rad = input->yaw_rad;
+}
+
+static void replay_apply_rotate_prebrake(Nav_Output_t *out,
+                                         uint8 target_index,
+                                         float target_distance)
+{
+    float ratio;
+    float speed_range;
+
+    if (out == NULL || target_index >= g_record_state.keypoint_count ||
+        g_record_keypoints[target_index].action !=
+        NAV_ROUTE_POINT_ACTION_ROTATE720) {
+        return;
+    }
+
+    if (target_distance <= NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M) {
+        out->velocity_cmd = NAV_RECORD_ROTATE_HARD_BRAKE_SPEED;
+        return;
+    }
+
+    if (target_distance <= NAV_RECORD_ROTATE_CRAWL_DISTANCE_M) {
+        out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED;
+        return;
+    }
+
+    if (target_distance >= NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M) {
+        return;
+    }
+
+    speed_range = NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M -
+                  NAV_RECORD_ROTATE_CRAWL_DISTANCE_M;
+    if (speed_range <= 0.0f) {
+        out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED;
+        return;
+    }
+
+    ratio = (target_distance - NAV_RECORD_ROTATE_CRAWL_DISTANCE_M) /
+            speed_range;
+    ratio = clamp(ratio, 0.0f, 1.0f);
+    out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED +
+        (out->velocity_cmd - NAV_RECORD_ROTATE_CRAWL_SPEED) * ratio;
 }
 
 static Nav_Output_t replay_final_brake_update(const Nav_Input_t *input)
@@ -494,6 +540,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                 out.velocity_cmd = NAV_RECORD_CORNER_SPEED;
             }
         }
+        replay_apply_rotate_prebrake(&out, cur_index, target_distance);
         out.target_yaw_valid = true;
         out.target_yaw_rad = target_yaw_cmd;
         out.region = NAV_REGION_NORMAL;
