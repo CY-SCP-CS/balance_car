@@ -23,24 +23,24 @@ typedef enum {
 #define JUMP_CUSHION_DELTA   90.0f   /* 落地相对缓冲深度 */
 
 /* 前向推进 */
-#define JUMP_FORWARD_BIAS   -0.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
+#define JUMP_FORWARD_BIAS   -20.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
 
 /* 空中惯量补偿: 足端前移对抗前重后轻 (mm) */
-#define JUMP_AIR_X_COMPENSATE  -50.0f
+#define JUMP_AIR_X_COMPENSATE  5.0f
 
 /* 时序 (1kHz cycles) */
 #define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
 #define MULTI_STABILIZE_DURATION 300    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
 #define SQUAT_DURATION          400
-#define MULTI_SQUAT_DURATION    200     /* 多级跳跃时加速下蹲 */
+#define MULTI_SQUAT_DURATION    150     /* 多级跳跃时加速下蹲 */
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
 #define LAUNCH_TIMEOUT        200
 #define TUCK_RAMP_MS           30
 #define REACH_RAMP_MS          30
 #define CUSHION_RAMP_MS        30
 #define CUSHION_HOLD_MS       200
-#define MULTI_CUSHION_HOLD_MS   150   /* 多级跳跃时保持缓冲位让速度环稳定 */
-#define MULTI_CUSHION_RELEASE_MS 100   /* 多级跳跃时渐进释放到中立位 */
+#define MULTI_CUSHION_HOLD_MS   0   /* 多级跳跃时保持缓冲位让速度环稳定 */
+#define MULTI_CUSHION_RELEASE_MS 60   /* 多级跳跃时渐进释放到中立位 */
 #define CUSHION_RELEASE_MS    400
 #define BALANCE_RAMP_MS        50
 
@@ -190,8 +190,11 @@ static void run_launch(const Sensor_data_t *sensor,
                        Foot_position_t *left, Foot_position_t *right)
 {
     if (g_cycle == 1) {
-        g_air_x_left  = left->x;   /* 捕获纯 leg_cmd 重心补偿, 不含 FORWARD_BIAS */
-        g_air_x_right = right->x;
+        /* 前馈: 基于接近速度计算空中 X, 保证多跳之间一致 */
+        float ff_x = g_approach_speed * 200.0f;
+        ff_x = CLAMP(ff_x, -80.0f, 80.0f);
+        g_air_x_left  = left->x + ff_x;
+        g_air_x_right = right->x - ff_x;
         leg_pid_set_launch_gains();
     }
 

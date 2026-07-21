@@ -91,7 +91,7 @@ int main(void)
 #else
     //track_rotate720_start();   // 测试旋转720
 #endif
-    jump_start(-0.25f, 2);//三级台阶
+    jump_start(-0.33f, 3);//三级台阶
     //jump_start(-1.20f, 1);//直接跳过颠簸
 
     while(true)
