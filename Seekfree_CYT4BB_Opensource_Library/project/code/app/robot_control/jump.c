@@ -26,7 +26,7 @@ typedef enum {
 #define JUMP_FORWARD_BIAS   -0.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
 
 /* 空中惯量补偿: 足端前移对抗前重后轻 (mm) */
-#define JUMP_AIR_X_COMPENSATE  -0.0f
+#define JUMP_AIR_X_COMPENSATE  -50.0f
 
 /* 时序 (1kHz cycles) */
 #define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
@@ -129,12 +129,13 @@ static void run_stabilize(const Sensor_data_t *sensor,
     (void)sensor;
 
     if (g_cycle == 1) {
-        robot_control_reset_leg_speed_pid();  /* 清除正常行驶的积分, 防止带入跳跃 */
+        robot_control_reset_leg_speed_pid();  /* 清除正常行驶的积分, 防止带入跳跃 (含 roll PID) */
     }
 
-    /* 足端 X 居中, 切断 leg_cmd_solve 的 X 穿透 */
-    left->x  = 0;
-    right->x = 0;
+    /* 保留 leg_cmd_solve 的 X 输出, 让 g_leg_speed_pid 控制前向速度 */
+    /* 清零 Y, 关闭 roll 闭环 */
+    left->y  = 0;
+    right->y = 0;
 
     /* 首跳用长自稳 (平地接近), 后续用短自稳 (台阶面积有限) */
     uint16_t duration = (g_jump_remaining == g_jump_total)

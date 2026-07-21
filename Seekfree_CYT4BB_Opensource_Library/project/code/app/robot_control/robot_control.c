@@ -322,8 +322,18 @@ void control_task(void){
 
     /* ── 足端位置计算 ── */
     if (!airborne) {
+        /* 跳跃地面阶段: 用接近速度驱动 g_leg_speed_pid */
+        if (jump_is_active()) {
+            cmd_local.target_speed = jump_get_approach_speed();
+        }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
+
+        /* 跳跃期间关闭 roll 闭环, 由跳跃状态机自己控制 Y */
+        if (jump_is_active()) {
+            foot_position_left.y  = 0.0f;
+            foot_position_right.y = 0.0f;
+        }
     } else {
         foot_position_left.x  = 0.0f;
         foot_position_left.y  = 0.0f;
