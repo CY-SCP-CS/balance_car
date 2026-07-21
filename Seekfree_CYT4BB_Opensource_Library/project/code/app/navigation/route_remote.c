@@ -3,8 +3,14 @@
 #include "../../hmi/indicator/led_buzzer.h"
 #include "../remote/remote_comm.h"
 
-/* key[2]: add record point; switch_key[2]: replay; switch_key[3]: record mode. */
+/*
+ * key[2]: add record point;
+ * key[3]: mark the next record point as ROTATE720;
+ * switch_key[2]: replay;
+ * switch_key[3]: record mode.
+ */
 #define ROUTE_RECORD_KEY        2u
+#define ROUTE_ROTATE_ACTION_KEY 3u
 #define ROUTE_PLAY_SWITCH       2u
 #define ROUTE_RECORD_SWITCH     3u
 
@@ -12,6 +18,7 @@ static uint8 g_prev_key[4] = {0u, 0u, 0u, 0u};
 static uint8 g_prev_record_switch;
 static uint8 g_prev_play_switch;
 static bool g_prev_connected;
+static bool g_next_keypoint_rotate720;
 
 static bool remote_key_rising(const Remote_State_t *remote, uint8 index)
 {
@@ -53,6 +60,7 @@ void route_remote_update(const Nav_Input_t *input)
     play_switch = remote->switch_key[ROUTE_PLAY_SWITCH] != 0u ? 1u : 0u;
 
     if (!remote->connected) {
+        g_next_keypoint_rotate720 = false;
         g_prev_connected = false;
         state = nav_route_record_get_state();
         if (state.mode == NAV_ROUTE_REPLAYING) {
@@ -70,6 +78,7 @@ void route_remote_update(const Nav_Input_t *input)
         g_prev_record_switch = record_switch;
         g_prev_play_switch = play_switch;
         remote_key_sync(remote, ROUTE_RECORD_KEY);
+        remote_key_sync(remote, ROUTE_ROTATE_ACTION_KEY);
         return;
     }
 
@@ -80,26 +89,45 @@ void route_remote_update(const Nav_Input_t *input)
     g_prev_play_switch = play_switch;
 
     if (record_switch_rising) {
+        g_next_keypoint_rotate720 = false;
         nav_route_replay_stop();
         if (nav_route_record_start(input)) {
             buzzer_beep(BEEP_TRIPLE);
         }
         remote_key_sync(remote, ROUTE_RECORD_KEY);
+        remote_key_sync(remote, ROUTE_ROTATE_ACTION_KEY);
     }
 
     if (record_switch != 0u) {
         state = nav_route_record_get_state();
         if (state.mode != NAV_ROUTE_RECORDING) {
+            g_next_keypoint_rotate720 = false;
             if (nav_route_record_start(input)) {
                 buzzer_beep(BEEP_TRIPLE);
             }
             remote_key_sync(remote, ROUTE_RECORD_KEY);
+            remote_key_sync(remote, ROUTE_ROTATE_ACTION_KEY);
         }
 
         if (state.mode == NAV_ROUTE_RECORDING) {
+            if (remote_key_rising(remote, ROUTE_ROTATE_ACTION_KEY)) {
+                g_next_keypoint_rotate720 = !g_next_keypoint_rotate720;
+                buzzer_beep(g_next_keypoint_rotate720 ?
+                            BEEP_DOUBLE : BEEP_SHORT);
+            }
+
             if (remote_key_rising(remote, ROUTE_RECORD_KEY)) {
-                if (!nav_route_record_keypoint(input)) {
+                Nav_Route_Point_Action_t action =
+                    g_next_keypoint_rotate720 ?
+                    NAV_ROUTE_POINT_ACTION_ROTATE720 :
+                    NAV_ROUTE_POINT_ACTION_NONE;
+
+                if (!nav_route_record_keypoint_with_action(input, action)) {
                     buzzer_beep(BEEP_ERROR);
+                } else {
+                    buzzer_beep(action == NAV_ROUTE_POINT_ACTION_ROTATE720 ?
+                                BEEP_DOUBLE : BEEP_SHORT);
+                    g_next_keypoint_rotate720 = false;
                 }
             }
         }
@@ -107,6 +135,7 @@ void route_remote_update(const Nav_Input_t *input)
     }
 
     if (record_switch_falling) {
+        g_next_keypoint_rotate720 = false;
         state = nav_route_record_get_state();
         if (state.mode == NAV_ROUTE_RECORDING) {
             if (nav_route_record_finish()) {
@@ -124,6 +153,7 @@ void route_remote_update(const Nav_Input_t *input)
     }
 
     if (play_switch_rising && state.mode != NAV_ROUTE_RECORDING) {
+        g_next_keypoint_rotate720 = false;
         if (nav_route_replay_start(input)) {
             buzzer_beep(BEEP_DOUBLE_LONG);
         }
