@@ -128,23 +128,28 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
 
 /* =========================== 单边桥与爬坡 =========================== */
 
-#define BRIDGE_SPEED 0.6f   /* 归一化 target_speed */
+#define BRIDGE_SPEED           -0.3f   /* 归一化 target_speed */
+#define BRIDGE_CLIMB_TIMEOUT_MS 3000   /* 超时自动退出 (ms) */
 
-static bool g_bridge_climb_active = false;
+static bool     g_bridge_climb_active = false;
+static uint16_t g_bridge_climb_timer  = 0;
 
 void track_bridge_climb_init(void)
 {
     g_bridge_climb_active = false;
+    g_bridge_climb_timer  = 0;
 }
 
 void track_bridge_climb_activate(void)
 {
     g_bridge_climb_active = true;
+    g_bridge_climb_timer  = 0;
 }
 
 void track_bridge_climb_deactivate(void)
 {
     g_bridge_climb_active = false;
+    g_bridge_climb_timer  = 0;
 }
 
 bool track_bridge_climb_is_active(void)
@@ -156,6 +161,11 @@ void track_bridge_climb_apply(Move_cmd_t *cmd)
 {
     if (g_bridge_climb_active) {
         cmd->target_speed = BRIDGE_SPEED;
+        g_bridge_climb_timer++;
+        if (g_bridge_climb_timer >= BRIDGE_CLIMB_TIMEOUT_MS) {
+            g_bridge_climb_active = false;
+            g_bridge_climb_timer  = 0;
+        }
     }
 }
 

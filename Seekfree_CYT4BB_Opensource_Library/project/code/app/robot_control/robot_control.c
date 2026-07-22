@@ -38,6 +38,7 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
 #define USE_VMC 0
 #define REMOTE_STEER_GAIN_RAD 6.00f
 #define AIR_BALANCE_GAIN      1.0f    /* 空中平衡环缩放, 轮子反作用力矩稳定身体 */
+/*
 #define CTRL_SPEED_CMD_SCALE       3.3f
 #define CTRL_BRAKE_STOP_RADPS      0.9f
 #define CTRL_BRAKE_CMD_DEADBAND    0.02f
@@ -91,7 +92,7 @@ static float robot_control_apply_reverse_brake(float target_speed,
 
     return target_speed;
 }
-
+*/
 /* 腿部关节 PID 控制器 */
 Leg_PID_t g_leg_left_pid, g_leg_right_pid;
 
@@ -299,18 +300,12 @@ void control_task(void){
         if (track_bumpy_is_active()) {
             cmd_local.target_speed = track_bumpy_get_speed();
         }
-        if (jump_is_stabilizing() || jump_is_squatting()) {
-            float app_speed = jump_get_approach_speed();
-            if (app_speed != 0.0f) {
-                cmd_local.target_speed = app_speed;
-            }
-        }
     }
 
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
         {
-            float pitch_target = jump_is_active() ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pitch_target = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
             float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
             g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
             g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
@@ -381,6 +376,14 @@ void control_task(void){
 
     /* ── 足端位置计算 ── */
     if (!airborne) {
+        /* 跳跃地面阶段: 用接近速度驱动 g_leg_speed_pid */
+        if (jump_is_active()) {
+            cmd_local.target_speed = jump_get_approach_speed();
+        }
+        /* 冷却期: 目标速度清零, 原地稳住 */
+        if (jump_is_in_cooldown()) {
+            cmd_local.target_speed = 0.3f;
+        }
         /* 颠簸路段: 极慢速度 */
         if (track_bumpy_is_active()) {
             cmd_local.target_speed = 0.2f;
@@ -398,6 +401,12 @@ void control_task(void){
         }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
+
+        /* 跳跃期间关闭 roll 闭环, 由跳跃状态机自己控制 Y */
+        if (jump_is_active()) {
+            foot_position_left.y  = 0.0f;
+            foot_position_right.y = 0.0f;
+        }
     } else {
         foot_position_left.x  = 0.0f;
         foot_position_left.y  = 0.0f;
@@ -723,10 +732,10 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed =
-        robot_control_apply_reverse_brake(ctrl->velocity_cmd *
+    cmd->target_speed = ctrl->velocity_cmd;  /* [-1, 1], 与 speed_norm 同尺度 */
+       /* robot_control_apply_reverse_brake(ctrl->velocity_cmd *
                                           CTRL_SPEED_CMD_SCALE,
-                                          sensor);
+                                          sensor);*/
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;

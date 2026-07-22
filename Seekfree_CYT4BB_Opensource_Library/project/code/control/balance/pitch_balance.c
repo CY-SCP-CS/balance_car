@@ -36,7 +36,7 @@ float speed_control(const Sensor_data_t *sensor,
 {
     float speed_cur   = (sensor->motor_left_speed + sensor->motor_right_speed) / 2.0f;
     float speed_norm  = speed_cur / 60.0f;       /* 车轮速度归一化 [-1, 1] */
-    float target_norm = target_speed / 3.3f;      /* 目标速度归一化 [-1, 1], 与 speed_norm 同尺度 */
+    float target_norm = target_speed;             /* 已是 [-1, 1], 与 speed_norm 同尺度 */
 
     float pitch_target = pid_calculate(pid_speed, target_norm, speed_norm);
     return pitch_target;
