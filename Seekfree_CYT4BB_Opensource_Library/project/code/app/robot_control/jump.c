@@ -20,19 +20,19 @@ typedef enum {
 #define JUMP_PUSH_Y        -400.0f   /* 蹬地伸腿 (饱和在关节限位) */
 #define JUMP_TUCK_Y          0.0f   /* 空中收腿 */
 #define JUMP_REACH_Y        -60.0f   /* 空中伸腿够地 */
-#define JUMP_CUSHION_DELTA   90.0f   /* 落地相对缓冲深度 */
+#define JUMP_CUSHION_DELTA   110.0f   /* 落地相对缓冲深度 */
 
 /* 前向推进 */
-#define JUMP_FORWARD_BIAS   -20.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
+#define JUMP_FORWARD_BIAS   -0.0f   /* 蹬地时脚在髋后方的偏移 (mm) */
 
 /* 空中惯量补偿: 足端前移对抗前重后轻 (mm) */
-#define JUMP_AIR_X_COMPENSATE  5.0f
+#define JUMP_AIR_X_COMPENSATE  80.0f
 
 /* 时序 (1kHz cycles) */
 #define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
-#define MULTI_STABILIZE_DURATION 300    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
+#define MULTI_STABILIZE_DURATION 125    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
 #define SQUAT_DURATION          400
-#define MULTI_SQUAT_DURATION    150     /* 多级跳跃时加速下蹲 */
+#define MULTI_SQUAT_DURATION    120     /* 多级跳跃时加速下蹲 */
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
 #define LAUNCH_TIMEOUT        200
 #define TUCK_RAMP_MS           30
@@ -45,7 +45,7 @@ typedef enum {
 #define BALANCE_RAMP_MS        50
 
 /* 飞行阶段检测阈值 */
-#define IMPACT_ACCEL          0.7f    /* accel_z > 此值 = 触地 */
+#define IMPACT_ACCEL          1.2f    /* accel_z > 此值 = 触地 */
 #define FREEZE_MS             15      /* 伸腿后冻结期, 防误触发 */
 #define FLY_TIMEOUT_CYCLES    500     /* 飞行总超时 */
 #define ACCEL_FREEFALL_THRESHOLD 0.3f /* 自由落体判据 */
@@ -190,11 +190,11 @@ static void run_launch(const Sensor_data_t *sensor,
                        Foot_position_t *left, Foot_position_t *right)
 {
     if (g_cycle == 1) {
-        /* 前馈: 基于接近速度计算空中 X, 保证多跳之间一致 */
+        /* 纯前馈: 基于接近速度计算空中 X, 不依赖 PID 状态, 多跳一致 */
         float ff_x = g_approach_speed * 200.0f;
         ff_x = CLAMP(ff_x, -80.0f, 80.0f);
-        g_air_x_left  = left->x + ff_x;
-        g_air_x_right = right->x - ff_x;
+        g_air_x_left  = ff_x;
+        g_air_x_right = -ff_x;
         leg_pid_set_launch_gains();
     }
 
@@ -305,6 +305,10 @@ static void run_land(const Sensor_data_t *sensor,
             enter_state(JUMP_SQUAT);
         }
     } else {
+        /* 最后一跳: 脚前伸 50mm, 身体后仰, 轮子移重心前减速 */
+        left->x  = -50.0f;
+        right->x = 50.0f;
+
         uint16_t hold_ms  = CUSHION_HOLD_MS;
         uint16_t phase_ab = CUSHION_RAMP_MS + hold_ms;
 
@@ -327,7 +331,7 @@ static void run_land(const Sensor_data_t *sensor,
             robot_control_reset_leg_speed_pid();
             g_jump_remaining = 0;
             g_jump_total     = 0;
-            g_cooldown_timer = JUMP_COOLDOWN_MS;  /* 启动冷却期, g_speed_pid 保持关闭 */
+            g_cooldown_timer = 0;  /* 最后一跳不设冷却, 立刻刹车 */
             enter_state(JUMP_IDLE);
         }
     }

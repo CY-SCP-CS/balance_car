@@ -728,7 +728,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed = ctrl->velocity_cmd * 3.3f;
+    cmd->target_speed = ctrl->velocity_cmd;  /* [-1, 1], 与 speed_norm 同尺度 */
        /* robot_control_apply_reverse_brake(ctrl->velocity_cmd *
                                           CTRL_SPEED_CMD_SCALE,
                                           sensor);*/

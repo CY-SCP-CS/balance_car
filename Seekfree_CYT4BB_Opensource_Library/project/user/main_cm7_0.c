@@ -15,8 +15,8 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
-/* 手动测试开关: 标定完成后直接激活颠簸路段, 不依赖导航 */
-#define BUMPY_MANUAL_TEST 0
+/* 手动测试开关: 标定完成后直接激活单边桥, 不依赖导航 */
+#define BRIDGE_MANUAL_TEST 1
 
 #define CM7_0_READY_MAGIC 0x43373031u
 
@@ -84,14 +84,13 @@ int main(void)
     }
     zf_log(0, "Angle calibration OK.");
 
-#if BUMPY_MANUAL_TEST
-    track_bumpy_activate();
-    track_bumpy_apply_compliance();
-    zf_log(0, "Bumpy manual test started (Mode A).");
+#if BRIDGE_MANUAL_TEST
+    //track_bridge_climb_activate();
+    //zf_log(0, "Bridge climb manual test started.");
 #else
     //track_rotate720_start();   // 测试旋转720
 #endif
-    jump_start(-0.33f, 3);//三级台阶
+    jump_start(-0.27f, 3);//三级台阶
     //jump_start(-1.20f, 1);//直接跳过颠簸
 
     while(true)
@@ -171,6 +170,18 @@ int main(void)
 
         small_driver_get_angle(&small_driver_value);
         sensor_cmd_update(&g_ctrl, &g_sensor_data, &g_move_cmd);
+
+        /* 速度回传, 每 100ms 打印一次 */
+        {
+            static uint16_t print_cnt = 0;
+            if (++print_cnt >= 100) {
+                print_cnt = 0;
+                printf("speed L=%.2f R=%.2f rad/s\r\n",
+                       g_sensor_data.motor_left_speed,
+                       g_sensor_data.motor_right_speed);
+            }
+        }
+
         led_buzzer_tick(1u);
         system_delay_ms(1);
 
