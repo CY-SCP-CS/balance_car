@@ -380,6 +380,10 @@ void control_task(void){
         if (jump_is_active()) {
             cmd_local.target_speed = jump_get_approach_speed();
         }
+        /* 冷却期: 目标速度清零, 原地稳住 */
+        if (jump_is_in_cooldown()) {
+            cmd_local.target_speed = 0.3f;
+        }
         /* 颠簸路段: 极慢速度 */
         if (track_bumpy_is_active()) {
             cmd_local.target_speed = 0.2f;

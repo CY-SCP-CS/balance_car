@@ -31,6 +31,7 @@ typedef enum {
 /* 时序 (1kHz cycles) */
 #define STABILIZE_DURATION      1500    /* 单次起跳前自稳 1.5 秒 */
 #define MULTI_STABILIZE_DURATION 125    /* 多级跳跃时每跳自稳 300ms (台阶面积有限, 不宜太长) */
+#define JUMP23_STABILIZE_MS     100    /* 第二→第三跳之间自稳, 独立可调 */
 #define SQUAT_DURATION          400
 #define MULTI_SQUAT_DURATION    120     /* 多级跳跃时加速下蹲 */
 #define LAUNCH_RAMP_MS         50    /* 伸腿渐变时间 */
@@ -51,7 +52,7 @@ typedef enum {
 #define ACCEL_FREEFALL_THRESHOLD 0.3f /* 自由落体判据 */
 
 /* 跳跃结束后速度环冷却期 (ms) */
-#define JUMP_COOLDOWN_MS      1500
+#define JUMP_COOLDOWN_MS      2000
 
 /* 腿 PID 临时高增益 (LAUNCH 阶段减少力冲击持续时间) */
 #define LAUNCH_KP             10000.0f
@@ -137,10 +138,15 @@ static void run_stabilize(const Sensor_data_t *sensor,
     left->y  = 0;
     right->y = 0;
 
-    /* 首跳用长自稳 (平地接近), 后续用短自稳 (台阶面积有限) */
-    uint16_t duration = (g_jump_remaining == g_jump_total)
-                        ? STABILIZE_DURATION
-                        : MULTI_STABILIZE_DURATION;
+    /* 首跳用长自稳, 最后一跳用 JUMP23_STABILIZE_MS, 其他用 MULTI_STABILIZE_DURATION */
+    uint16_t duration;
+    if (g_jump_remaining == g_jump_total) {
+        duration = STABILIZE_DURATION;
+    } else if (g_jump_remaining == 1) {
+        duration = JUMP23_STABILIZE_MS;
+    } else {
+        duration = MULTI_STABILIZE_DURATION;
+    }
 
     if (g_cycle >= duration) {
         enter_state(JUMP_SQUAT);
@@ -302,7 +308,12 @@ static void run_land(const Sensor_data_t *sensor,
         if (g_cycle >= phase_abc) {
             robot_control_reset_leg_speed_pid();
             g_jump_remaining--;
-            enter_state(JUMP_SQUAT);
+            /* 最后一跳前先进自稳, 给 JUMP23_STABILIZE_MS 单独调节窗口 */
+            if (g_jump_remaining == 1) {
+                enter_state(JUMP_STABILIZE);
+            } else {
+                enter_state(JUMP_SQUAT);
+            }
         }
     } else {
         /* 最后一跳: 脚前伸 50mm, 身体后仰, 轮子移重心前减速 */
@@ -331,7 +342,7 @@ static void run_land(const Sensor_data_t *sensor,
             robot_control_reset_leg_speed_pid();
             g_jump_remaining = 0;
             g_jump_total     = 0;
-            g_cooldown_timer = 0;  /* 最后一跳不设冷却, 立刻刹车 */
+            g_cooldown_timer = JUMP_COOLDOWN_MS;  /* 最后一跳后关轮速环 */
             enter_state(JUMP_IDLE);
         }
     }
