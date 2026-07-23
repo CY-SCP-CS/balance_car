@@ -20,10 +20,13 @@
 #define NAV_RECORD_CROSSTRACK_LIMIT_RAD        (20.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS   0.05f
+#define NAV_RECORD_TURN_READY_SPEED_MPS        0.10f
 #define NAV_RECORD_TURN_BRAKE_START_SPEED      0.08f
 #define NAV_RECORD_TURN_BRAKE_MAX_SPEED        0.18f
 #define NAV_RECORD_TURN_BRAKE_RAMP_RATE        0.60f
+#define NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M   0.35f
+#define NAV_RECORD_TURN_PREBRAKE_YAW_RAD       (45.0f * NAV_DEG_TO_RAD)
+#define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.10f)
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
@@ -253,7 +256,7 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
         return out;
     }
 
-    if (fabsf(input->speed_mps) <= NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS) {
+    if (fabsf(input->speed_mps) <= NAV_RECORD_TURN_READY_SPEED_MPS) {
         replay_reset_turn_brake();
         replay_fill_waypoint_event(&out, index);
         replay_advance_waypoint();
@@ -307,6 +310,61 @@ static void replay_apply_rotate_prebrake(Nav_Output_t *out,
     ratio = clamp(ratio, 0.0f, 1.0f);
     out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED +
         (out->velocity_cmd - NAV_RECORD_ROTATE_CRAWL_SPEED) * ratio;
+}
+
+static float replay_upcoming_turn_angle(uint8 target_index,
+                                        float segment_yaw)
+{
+    float corner_x;
+    float corner_y;
+    float next_x;
+    float next_y;
+    float next_dx;
+    float next_dy;
+    float next_distance;
+    float next_yaw;
+
+    if (target_index + 1u >= g_record_state.keypoint_count) {
+        return 0.0f;
+    }
+
+    replay_transform_keypoint(target_index, &corner_x, &corner_y, NULL);
+    replay_transform_keypoint((uint8)(target_index + 1u),
+                              &next_x,
+                              &next_y,
+                              NULL);
+
+    next_dx = next_x - corner_x;
+    next_dy = next_y - corner_y;
+    next_distance = sqrtf(next_dx * next_dx + next_dy * next_dy);
+    if (next_distance < NAV_RECORD_SHORT_SEGMENT_M) {
+        return 0.0f;
+    }
+
+    next_yaw = atan2f(next_dy, next_dx);
+    return fabsf(nav_wrap_pi(next_yaw - segment_yaw));
+}
+
+static void replay_apply_turn_prebrake(Nav_Output_t *out,
+                                       float target_distance,
+                                       float upcoming_turn_rad)
+{
+    float distance_ratio;
+
+    if (out == NULL ||
+        out->velocity_cmd >= 0.0f ||
+        upcoming_turn_rad < NAV_RECORD_TURN_PREBRAKE_YAW_RAD ||
+        target_distance >= NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M) {
+        return;
+    }
+
+    distance_ratio = 1.0f -
+        clamp(target_distance / NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M,
+              0.0f,
+              1.0f);
+
+    out->velocity_cmd += (NAV_RECORD_TURN_PREBRAKE_SPEED -
+                          out->velocity_cmd) * distance_ratio;
 }
 
 static Nav_Output_t replay_final_brake_update(const Nav_Input_t *input)
@@ -544,6 +602,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float yaw_correction;
         float yaw_error;
         float abs_yaw_error;
+        float upcoming_turn_rad;
         bool passed_waypoint;
         bool final_waypoint;
 
@@ -556,6 +615,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         segment_distance = sqrtf(segment_dx * segment_dx +
                                  segment_dy * segment_dy);
         segment_yaw = atan2f(segment_dy, segment_dx);
+        upcoming_turn_rad = replay_upcoming_turn_angle(cur_index,
+                                                       segment_yaw);
 
         if (segment_distance < NAV_RECORD_SHORT_SEGMENT_M) {
             if (g_record_keypoints[cur_index].action ==
@@ -626,8 +687,9 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
 
         if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
             if (fabsf(input->speed_mps) >
-                NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS) {
+                NAV_RECORD_TURN_READY_SPEED_MPS) {
                 out.velocity_cmd = replay_update_turn_brake(input->time_ms);
+                target_yaw_cmd = input->yaw_rad;
             } else {
                 replay_reset_turn_brake();
                 out.velocity_cmd = NAV_RECORD_TURN_SPEED;
@@ -639,6 +701,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
                 out.velocity_cmd = NAV_RECORD_CORNER_SPEED;
             }
         }
+        replay_apply_turn_prebrake(&out, target_distance, upcoming_turn_rad);
         replay_apply_rotate_prebrake(&out, cur_index, target_distance);
         out.target_yaw_valid = true;
         out.target_yaw_rad = target_yaw_cmd;
