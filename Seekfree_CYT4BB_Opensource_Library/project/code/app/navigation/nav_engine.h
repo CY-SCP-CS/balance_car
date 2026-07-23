@@ -50,6 +50,7 @@ typedef struct {
     float x_m;
     float y_m;
     float distance_m;
+    float speed_mps;
     float yaw_rad;
     uint32 time_ms;
     Nav_Landmark_t landmark;

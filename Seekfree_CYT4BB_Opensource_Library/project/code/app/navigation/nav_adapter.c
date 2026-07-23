@@ -116,6 +116,7 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     input->x_m = odom_x;
     input->y_m = odom_y;
     input->distance_m = fused_distance;
+    input->speed_mps = robot_control_get_speed_mps();
 
     /* Vision updates landmark / obstacle fields after this update. */
 }

@@ -62,5 +62,6 @@ float robot_control_get_y(void);
 float robot_control_get_theta(void);
 float robot_control_get_distance(void);
 float robot_control_get_yaw(void);
+float robot_control_get_speed_mps(void);
 
 #endif /* ROBOT_CONTROL_H */

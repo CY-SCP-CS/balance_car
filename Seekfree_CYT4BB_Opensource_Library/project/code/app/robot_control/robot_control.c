@@ -30,6 +30,12 @@ float robot_control_get_y(void)        { return g_odom_y; }
 float robot_control_get_theta(void)    { return g_odom_theta; }
 float robot_control_get_distance(void) { return g_odom_path; }
 float robot_control_get_yaw(void)      { return g_odom_theta; }
+float robot_control_get_speed_mps(void)
+{
+    float wheel_radius_m = LEG_WHEEL_RADIUS * 0.001f;
+    return (g_sensor_data.motor_left_speed +
+            g_sensor_data.motor_right_speed) * 0.5f * wheel_radius_m;
+}
 
 /* ─── 控制模式选择 ───
  *  USE_VMC = 0 : 当前 PID 方案 (默认)
