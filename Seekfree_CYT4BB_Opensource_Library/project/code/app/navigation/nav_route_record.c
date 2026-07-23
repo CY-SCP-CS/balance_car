@@ -30,11 +30,13 @@
 #define NAV_RECORD_TURN_PREBRAKE_YAW_RAD       (45.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
 #define NAV_RECORD_ROTATE_WAYPOINT_REACHED_M   0.01f
+#define NAV_RECORD_ROTATE_BRAKE_DECEL_MPS2     0.80f
+#define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.30f
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
 #define NAV_RECORD_ROTATE_CRAWL_SPEED          0.0f
-#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.10f
+#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.24f
 #define NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS    0.10f
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
@@ -247,7 +249,7 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
     return out;
 }
 
-static float replay_turn_brake_distance(float speed_mps);
+static float replay_rotate_brake_distance(float speed_mps);
 
 static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
                                          const Nav_Input_t *input,
@@ -271,18 +273,18 @@ static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
             g_replay_segment_brake_active = false;
             g_replay_segment_brake_done = true;
         } else {
-            out->velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+            out->velocity_cmd = NAV_RECORD_ROTATE_HARD_BRAKE_SPEED;
             return true;
         }
     }
 
-    brake_distance = replay_turn_brake_distance(input->speed_mps);
+    brake_distance = replay_rotate_brake_distance(input->speed_mps);
     if (!g_replay_segment_brake_done &&
         segment_distance >= NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M &&
         fabsf(input->speed_mps) > NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS &&
         target_distance <= brake_distance) {
         g_replay_segment_brake_active = true;
-        out->velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+        out->velocity_cmd = NAV_RECORD_ROTATE_HARD_BRAKE_SPEED;
         return true;
     }
 
@@ -369,6 +371,18 @@ static float replay_turn_brake_distance(float speed_mps)
         speed_abs * speed_abs / (2.0f * NAV_RECORD_TURN_BRAKE_DECEL_MPS2);
 
     brake_distance += NAV_RECORD_TURN_BRAKE_MARGIN_M;
+    return clamp(brake_distance,
+                 0.0f,
+                 NAV_RECORD_TURN_BRAKE_MAX_LOOKAHEAD_M);
+}
+
+static float replay_rotate_brake_distance(float speed_mps)
+{
+    float speed_abs = fabsf(speed_mps);
+    float brake_distance =
+        speed_abs * speed_abs / (2.0f * NAV_RECORD_ROTATE_BRAKE_DECEL_MPS2);
+
+    brake_distance += NAV_RECORD_ROTATE_BRAKE_MARGIN_M;
     return clamp(brake_distance,
                  0.0f,
                  NAV_RECORD_TURN_BRAKE_MAX_LOOKAHEAD_M);
