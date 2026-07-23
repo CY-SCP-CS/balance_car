@@ -29,6 +29,7 @@
 #define NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M 0.80f
 #define NAV_RECORD_TURN_PREBRAKE_YAW_RAD       (45.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
+#define NAV_RECORD_ROTATE_WAYPOINT_REACHED_M   0.01f
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
@@ -269,15 +270,10 @@ static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
         if (fabsf(input->speed_mps) <= NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS) {
             g_replay_segment_brake_active = false;
             g_replay_segment_brake_done = true;
-            return false;
         } else {
             out->velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
             return true;
         }
-    }
-
-    if (g_replay_segment_brake_done) {
-        return false;
     }
 
     brake_distance = replay_turn_brake_distance(input->speed_mps);
@@ -659,6 +655,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float target_dx;
         float target_dy;
         float target_distance;
+        float waypoint_reach_radius;
         float segment_yaw;
         float cross_track_error;
         float yaw_correction;
@@ -703,6 +700,11 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         target_dy = target_y - input->y_m;
         target_distance = sqrtf(target_dx * target_dx +
                                 target_dy * target_dy);
+        waypoint_reach_radius = reach_radius;
+        if (g_record_keypoints[cur_index].action ==
+            NAV_ROUTE_POINT_ACTION_ROTATE720) {
+            waypoint_reach_radius = NAV_RECORD_ROTATE_WAYPOINT_REACHED_M;
+        }
         passed_waypoint = waypoint_passed(prev_x,
                                           prev_y,
                                           target_x,
@@ -728,7 +730,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         }
 
         if (!final_waypoint &&
-            (target_distance <= reach_radius || passed_waypoint)) {
+            (target_distance <= waypoint_reach_radius || passed_waypoint)) {
             if (g_record_keypoints[cur_index].action ==
                 NAV_ROUTE_POINT_ACTION_ROTATE720) {
                 return replay_rotate_action_brake_update(input, cur_index);
