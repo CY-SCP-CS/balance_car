@@ -31,8 +31,8 @@
 #define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
 #define NAV_RECORD_ROTATE_WAYPOINT_REACHED_M   0.01f
 #define NAV_RECORD_ROTATE_BRAKE_DECEL_MPS2     0.80f
-#define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.30f
-#define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
+#define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.45f
+#define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.24f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
 #define NAV_RECORD_ROTATE_CRAWL_SPEED          0.0f
@@ -223,6 +223,40 @@ static float replay_body_yaw_from_path_yaw(float path_yaw)
     return nav_wrap_pi(path_yaw + NAV_PI);
 }
 
+static bool replay_next_segment_body_yaw(uint8 index, float *yaw_rad)
+{
+    float from_x;
+    float from_y;
+    uint8 next_index;
+
+    if (yaw_rad == NULL || index >= g_record_state.keypoint_count) {
+        return false;
+    }
+
+    replay_transform_keypoint(index, &from_x, &from_y, NULL);
+
+    for (next_index = (uint8)(index + 1u);
+         next_index < g_record_state.keypoint_count;
+         next_index++) {
+        float to_x;
+        float to_y;
+        float dx;
+        float dy;
+        float distance;
+
+        replay_transform_keypoint(next_index, &to_x, &to_y, NULL);
+        dx = to_x - from_x;
+        dy = to_y - from_y;
+        distance = sqrtf(dx * dx + dy * dy);
+        if (distance >= NAV_RECORD_SHORT_SEGMENT_M) {
+            *yaw_rad = replay_body_yaw_from_path_yaw(atan2f(dy, dx));
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void replay_hold_current_yaw(Nav_Output_t *out, const Nav_Input_t *input)
 {
     if (out == NULL || input == NULL) {
@@ -238,6 +272,7 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
                                                        uint8 index)
 {
     Nav_Output_t out = {0};
+    float next_yaw_rad;
 
     if (input == NULL) {
         return out;
@@ -245,7 +280,13 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
 
     replay_fill_waypoint_event(&out, index);
     replay_advance_waypoint();
-    replay_hold_current_yaw(&out, input);
+    if (replay_next_segment_body_yaw(index, &next_yaw_rad)) {
+        out.velocity_cmd = 0.0f;
+        out.target_yaw_valid = true;
+        out.target_yaw_rad = next_yaw_rad;
+    } else {
+        replay_hold_current_yaw(&out, input);
+    }
     return out;
 }
 
