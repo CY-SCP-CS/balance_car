@@ -31,13 +31,14 @@
 #define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
 #define NAV_RECORD_ROTATE_WAYPOINT_REACHED_M   0.01f
 #define NAV_RECORD_ROTATE_BRAKE_DECEL_MPS2     0.80f
-#define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.45f
-#define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.24f
+#define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.55f
+#define NAV_RECORD_ROTATE_PREBRAKE_MIN_SEGMENT_M 0.05f
+#define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.30f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
 #define NAV_RECORD_ROTATE_CRAWL_SPEED          0.0f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.40f
-#define NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS    0.10f
+#define NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS    0.08f
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
@@ -321,7 +322,7 @@ static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
 
     brake_distance = replay_rotate_brake_distance(input->speed_mps);
     if (!g_replay_segment_brake_done &&
-        segment_distance >= NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M &&
+        segment_distance >= NAV_RECORD_ROTATE_PREBRAKE_MIN_SEGMENT_M &&
         fabsf(input->speed_mps) > NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS &&
         target_distance <= brake_distance) {
         g_replay_segment_brake_active = true;
@@ -329,7 +330,7 @@ static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
         return true;
     }
 
-    if (segment_distance >= NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M &&
+    if (segment_distance >= NAV_RECORD_ROTATE_PREBRAKE_MIN_SEGMENT_M &&
         target_distance < NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M) {
         ratio = 1.0f -
             clamp(target_distance / NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M,
