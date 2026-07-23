@@ -7,15 +7,27 @@
 
 /* =========================== 原地旋转720度 =========================== */
 
-#define ROT720_SPEED      (3.5f * M_PI)   /* 630°/s */
-#define ROT720_BASE_TURN  (4.0f * M_PI)   /* 先转两整圈 */
-#define ROT720_MARGIN     (0.0f * M_PI)   /* 停止角度冗余 */
-#define ROT720_LEAN_GAIN  0.35f           /* 压弯系数 (原0.2) */
+#define ROT720_SPEED                 (3.5f * M_PI)  /* 630°/s */
+#define ROT720_MIN_SPEED             (0.9f * M_PI)  /* 末端最低目标角速度 */
+#define ROT720_SLOWDOWN_ANGLE        (1.0f * M_PI)  /* 剩余半圈开始降速 */
+#define ROT720_SLOWDOWN_GAIN         5.0f
+#define ROT720_BASE_TURN             (4.0f * M_PI)  /* 先转两整圈 */
+#define ROT720_MARGIN                (0.0f * M_PI)  /* 停止角度冗余 */
+#define ROT720_LEAN_GAIN             0.35f          /* 压弯系数 (原0.2) */
+#define ROT720_SETTLE_LEAN_GAIN      0.20f
+#define ROT720_BRAKE_SPEED_TOL_MPS   0.04f
+#define ROT720_BRAKE_STABLE_TICKS    60u
+#define ROT720_BRAKE_TIMEOUT_TICKS   500u
+#define ROT720_SETTLE_YAW_TOL        (2.0f * M_PI / 180.0f)
+#define ROT720_SETTLE_RATE_TOL       0.25f
+#define ROT720_SETTLE_STABLE_TICKS   80u
+#define ROT720_SETTLE_TIMEOUT_TICKS  900u
 
 typedef enum {
     ROTATE720_IDLE = 0,
     ROTATE720_BRAKING,
     ROTATE720_ACTIVE,
+    ROTATE720_SETTLING,
     ROTATE720_DONE
 } Rotate720State_t;
 
@@ -27,6 +39,11 @@ static float            g_rotate720_dir = 1.0f;
 static bool             g_rotate720_target_valid = false;
 static float            g_rotate720_final_target = 0.0f;
 static bool             g_rotate720_final_target_valid = false;
+static float            g_rotate720_lock_target = 0.0f;
+static uint16_t         g_rotate720_brake_ticks = 0u;
+static uint16_t         g_rotate720_brake_stable_ticks = 0u;
+static uint16_t         g_rotate720_settle_ticks = 0u;
+static uint16_t         g_rotate720_settle_stable_ticks = 0u;
 
 static float rotate720_wrap_pi(float angle)
 {
@@ -51,6 +68,11 @@ void track_rotate720_init(void)
     g_rotate720_target_valid = false;
     g_rotate720_final_target = 0.0f;
     g_rotate720_final_target_valid = false;
+    g_rotate720_lock_target = 0.0f;
+    g_rotate720_brake_ticks = 0u;
+    g_rotate720_brake_stable_ticks = 0u;
+    g_rotate720_settle_ticks = 0u;
+    g_rotate720_settle_stable_ticks = 0u;
 }
 
 static void rotate720_start_common(bool final_target_valid,
@@ -65,6 +87,11 @@ static void rotate720_start_common(bool final_target_valid,
         g_rotate720_target_valid = false;
         g_rotate720_final_target = final_target;
         g_rotate720_final_target_valid = final_target_valid;
+        g_rotate720_lock_target = final_target;
+        g_rotate720_brake_ticks = 0u;
+        g_rotate720_brake_stable_ticks = 0u;
+        g_rotate720_settle_ticks = 0u;
+        g_rotate720_settle_stable_ticks = 0u;
     }
 }
 
@@ -81,7 +108,8 @@ void track_rotate720_start_with_target(float target_direction)
 bool track_rotate720_is_active(void)
 {
     return (g_rotate720_state == ROTATE720_BRAKING ||
-            g_rotate720_state == ROTATE720_ACTIVE);
+            g_rotate720_state == ROTATE720_ACTIVE ||
+            g_rotate720_state == ROTATE720_SETTLING);
 }
 
 bool track_rotate720_is_done(void)
@@ -91,7 +119,8 @@ bool track_rotate720_is_done(void)
 
 bool track_rotate720_should_suppress_odom(void)
 {
-    return track_rotate720_is_active();
+    return (g_rotate720_state == ROTATE720_ACTIVE ||
+            g_rotate720_state == ROTATE720_SETTLING);
 }
 
 void track_rotate720_reset(void)
@@ -104,12 +133,18 @@ void track_rotate720_reset(void)
     g_rotate720_target_valid = false;
     g_rotate720_final_target = 0.0f;
     g_rotate720_final_target_valid = false;
+    g_rotate720_lock_target = 0.0f;
+    g_rotate720_brake_ticks = 0u;
+    g_rotate720_brake_stable_ticks = 0u;
+    g_rotate720_settle_ticks = 0u;
+    g_rotate720_settle_stable_ticks = 0u;
 }
 
 void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
 {
     if (g_rotate720_state != ROTATE720_BRAKING &&
-        g_rotate720_state != ROTATE720_ACTIVE) {
+        g_rotate720_state != ROTATE720_ACTIVE &&
+        g_rotate720_state != ROTATE720_SETTLING) {
         return;
     }
 
@@ -122,36 +157,89 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
 
     if (!g_rotate720_target_valid) {
         g_rotate720_target = sensor->angle_yaw;
+        g_rotate720_lock_target = rotate720_wrap_pi(path_target_direction);
         g_rotate720_target_valid = true;
     }
 
     if (g_rotate720_state == ROTATE720_BRAKING) {
+        float body_speed_mps =
+            0.5f * (sensor->motor_left_speed + sensor->motor_right_speed) *
+            (LEG_WHEEL_RADIUS * 0.001f);
+
         cmd->target_direction = g_rotate720_target;
         cmd->target_roll = 0.0f;
+
+        g_rotate720_brake_ticks++;
+        if (fabsf(body_speed_mps) <= ROT720_BRAKE_SPEED_TOL_MPS) {
+            g_rotate720_brake_stable_ticks++;
+        } else {
+            g_rotate720_brake_stable_ticks = 0u;
+        }
+
+        if (g_rotate720_brake_stable_ticks < ROT720_BRAKE_STABLE_TICKS &&
+            g_rotate720_brake_ticks < ROT720_BRAKE_TIMEOUT_TICKS) {
+            return;
+        }
 
         g_rotate720_state = ROTATE720_ACTIVE;
         g_rotate720_accum = 0.0f;
         g_rotate720_target = sensor->angle_yaw;
 
-        float final_delta = rotate720_wrap_pi(path_target_direction -
+        float final_delta = rotate720_wrap_pi(g_rotate720_lock_target -
                                               sensor->angle_yaw);
-        g_rotate720_dir = (final_delta < 0.0f) ? -1.0f : 1.0f;
+        g_rotate720_dir = (final_delta < -ROT720_SETTLE_YAW_TOL) ? -1.0f : 1.0f;
         g_rotate720_target_accum = ROT720_BASE_TURN + fabsf(final_delta);
     }
 
     /* 每周期递增目标角度, 不归一化 (yaw 误差归一化逻辑处理角度回绕) */
-    g_rotate720_target += g_rotate720_dir * ROT720_SPEED * ROBOT_CONTROL_DT;
-    cmd->target_direction = g_rotate720_target;
+    if (g_rotate720_state == ROTATE720_ACTIVE) {
+        float remaining = g_rotate720_target_accum - g_rotate720_accum;
+        float target_rate = ROT720_SPEED;
 
-    /* 增强压弯: 旋转期间用更高系数 */
-    float roll_from_turn = -ROT720_LEAN_GAIN * sensor->gyro_yaw / MAX_YAW_RATE;
-    cmd->target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
+        if (remaining < ROT720_SLOWDOWN_ANGLE) {
+            target_rate = CLAMP(remaining * ROT720_SLOWDOWN_GAIN,
+                                ROT720_MIN_SPEED,
+                                ROT720_SPEED);
+        }
 
-    /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
-    g_rotate720_accum += fabsf(sensor->gyro_yaw) * ROBOT_CONTROL_DT;
+        g_rotate720_target += g_rotate720_dir * target_rate * ROBOT_CONTROL_DT;
+        cmd->target_direction = g_rotate720_target;
 
-    if (g_rotate720_accum >= g_rotate720_target_accum + ROT720_MARGIN) {
-        g_rotate720_state = ROTATE720_DONE;
+        /* 增强压弯: 旋转期间用更高系数 */
+        float roll_from_turn = -ROT720_LEAN_GAIN * sensor->gyro_yaw / MAX_YAW_RATE;
+        cmd->target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
+
+        /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
+        g_rotate720_accum += fabsf(sensor->gyro_yaw) * ROBOT_CONTROL_DT;
+
+        if (g_rotate720_accum >= g_rotate720_target_accum + ROT720_MARGIN) {
+            g_rotate720_state = ROTATE720_SETTLING;
+            g_rotate720_settle_ticks = 0u;
+            g_rotate720_settle_stable_ticks = 0u;
+        }
+    }
+
+    if (g_rotate720_state == ROTATE720_SETTLING) {
+        float yaw_error = rotate720_wrap_pi(g_rotate720_lock_target -
+                                            sensor->angle_yaw);
+        float roll_from_turn = -ROT720_SETTLE_LEAN_GAIN *
+                               sensor->gyro_yaw / MAX_YAW_RATE;
+
+        cmd->target_direction = g_rotate720_lock_target;
+        cmd->target_roll = CLAMP(roll_from_turn, -1.0f, 1.0f);
+
+        g_rotate720_settle_ticks++;
+        if (fabsf(yaw_error) <= ROT720_SETTLE_YAW_TOL &&
+            fabsf(sensor->gyro_yaw) <= ROT720_SETTLE_RATE_TOL) {
+            g_rotate720_settle_stable_ticks++;
+        } else {
+            g_rotate720_settle_stable_ticks = 0u;
+        }
+
+        if (g_rotate720_settle_stable_ticks >= ROT720_SETTLE_STABLE_TICKS ||
+            g_rotate720_settle_ticks >= ROT720_SETTLE_TIMEOUT_TICKS) {
+            g_rotate720_state = ROTATE720_DONE;
+        }
     }
 }
 

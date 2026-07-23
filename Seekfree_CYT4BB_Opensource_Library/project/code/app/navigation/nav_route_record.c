@@ -34,11 +34,14 @@
 #define NAV_RECORD_ROTATE_BRAKE_MARGIN_M       0.55f
 #define NAV_RECORD_ROTATE_PREBRAKE_MIN_SEGMENT_M 0.05f
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.30f
-#define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
+#define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.15f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
-#define NAV_RECORD_ROTATE_CRAWL_SPEED          0.0f
+#define NAV_RECORD_ROTATE_CRAWL_SPEED          (-0.05f)
+#define NAV_RECORD_ROTATE_PASS_CROSSTRACK_M    0.015f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.40f
 #define NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS    0.08f
+#define NAV_RECORD_ROTATE_TRIGGER_SPEED_MPS    0.04f
+#define NAV_RECORD_ROTATE_TRIGGER_DISTANCE_M   0.02f
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
@@ -168,12 +171,13 @@ static void replay_transform_keypoint(uint8 index,
     }
 }
 
-static bool waypoint_passed(float prev_x,
-                            float prev_y,
-                            float target_x,
-                            float target_y,
-                            float current_x,
-                            float current_y)
+static bool waypoint_passed_with_limit(float prev_x,
+                                       float prev_y,
+                                       float target_x,
+                                       float target_y,
+                                       float current_x,
+                                       float current_y,
+                                       float cross_track_limit)
 {
     float vx = target_x - prev_x;
     float vy = target_y - prev_y;
@@ -191,7 +195,23 @@ static bool waypoint_passed(float prev_x,
     }
 
     cross_track = fabsf(vx * wy - vy * wx) / sqrtf(segment_len_sq);
-    return cross_track <= NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M;
+    return cross_track <= cross_track_limit;
+}
+
+static bool waypoint_passed(float prev_x,
+                            float prev_y,
+                            float target_x,
+                            float target_y,
+                            float current_x,
+                            float current_y)
+{
+    return waypoint_passed_with_limit(prev_x,
+                                      prev_y,
+                                      target_x,
+                                      target_y,
+                                      current_x,
+                                      current_y,
+                                      NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M);
 }
 
 static void replay_advance_waypoint(void)
@@ -711,6 +731,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float target_dx;
         float target_dy;
         float target_distance;
+        float along_remaining;
         float waypoint_reach_radius;
         float segment_yaw;
         float cross_track_error;
@@ -721,6 +742,9 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         bool braking_before_turn;
         bool braking_before_rotate;
         bool passed_waypoint;
+        bool waypoint_position_ready;
+        bool rotate_point;
+        bool rotate_trigger_ready;
         bool final_waypoint;
 
         replay_sync_segment_brake();
@@ -740,6 +764,12 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         if (segment_distance < NAV_RECORD_SHORT_SEGMENT_M) {
             if (g_record_keypoints[cur_index].action ==
                 NAV_ROUTE_POINT_ACTION_ROTATE720) {
+                if (fabsf(input->speed_mps) >
+                    NAV_RECORD_ROTATE_TRIGGER_SPEED_MPS) {
+                    replay_hold_current_yaw(&out, input);
+                    out.region = NAV_REGION_NORMAL;
+                    return out;
+                }
                 return replay_rotate_action_brake_update(input, cur_index);
             }
 
@@ -756,22 +786,57 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         target_dy = target_y - input->y_m;
         target_distance = sqrtf(target_dx * target_dx +
                                 target_dy * target_dy);
+        along_remaining = (target_dx * segment_dx +
+                           target_dy * segment_dy) / segment_distance;
+        rotate_point = (g_record_keypoints[cur_index].action ==
+                        NAV_ROUTE_POINT_ACTION_ROTATE720);
         waypoint_reach_radius = reach_radius;
-        if (g_record_keypoints[cur_index].action ==
-            NAV_ROUTE_POINT_ACTION_ROTATE720) {
+        if (rotate_point) {
             waypoint_reach_radius = NAV_RECORD_ROTATE_WAYPOINT_REACHED_M;
+            passed_waypoint = waypoint_passed_with_limit(
+                prev_x,
+                prev_y,
+                target_x,
+                target_y,
+                input->x_m,
+                input->y_m,
+                NAV_RECORD_ROTATE_PASS_CROSSTRACK_M);
+        } else {
+            passed_waypoint = waypoint_passed(prev_x,
+                                              prev_y,
+                                              target_x,
+                                              target_y,
+                                              input->x_m,
+                                              input->y_m);
         }
-        passed_waypoint = waypoint_passed(prev_x,
-                                          prev_y,
-                                          target_x,
-                                          target_y,
-                                          input->x_m,
-                                          input->y_m);
+        waypoint_position_ready =
+            (target_distance <= waypoint_reach_radius || passed_waypoint);
+        rotate_trigger_ready =
+            rotate_point &&
+            target_distance <= NAV_RECORD_ROTATE_TRIGGER_DISTANCE_M &&
+            fabsf(input->speed_mps) <= NAV_RECORD_ROTATE_TRIGGER_SPEED_MPS;
 
-        if (final_waypoint && passed_waypoint) {
+        if (rotate_point &&
+            (target_distance <= NAV_RECORD_ROTATE_CRAWL_DISTANCE_M ||
+             passed_waypoint) &&
+            !rotate_trigger_ready) {
+            if (target_distance <= NAV_RECORD_ROTATE_TRIGGER_DISTANCE_M) {
+                out.velocity_cmd = 0.0f;
+            } else {
+                out.velocity_cmd = (along_remaining >= 0.0f) ?
+                    NAV_RECORD_ROTATE_CRAWL_SPEED :
+                    -NAV_RECORD_ROTATE_CRAWL_SPEED;
+            }
+            out.target_yaw_valid = true;
+            out.target_yaw_rad = replay_body_yaw_from_path_yaw(segment_yaw);
+            out.region = NAV_REGION_NORMAL;
+            return out;
+        }
+
+        if (final_waypoint &&
+            (rotate_point ? rotate_trigger_ready : waypoint_position_ready)) {
             Nav_Output_t brake_out;
-            if (g_record_keypoints[cur_index].action ==
-                NAV_ROUTE_POINT_ACTION_ROTATE720) {
+            if (rotate_point) {
                 return replay_rotate_action_brake_update(input, cur_index);
             }
 
@@ -786,9 +851,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         }
 
         if (!final_waypoint &&
-            (target_distance <= waypoint_reach_radius || passed_waypoint)) {
-            if (g_record_keypoints[cur_index].action ==
-                NAV_ROUTE_POINT_ACTION_ROTATE720) {
+            (rotate_point ? rotate_trigger_ready : waypoint_position_ready)) {
+            if (rotate_point) {
                 return replay_rotate_action_brake_update(input, cur_index);
             }
 
