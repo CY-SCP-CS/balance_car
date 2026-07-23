@@ -15,10 +15,8 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 
-/* 手动测试开关: 标定完成后直接激活, 不依赖导航 */
-#define BRIDGE_MANUAL_TEST         0
-#define SINGLE_BRIDGE_MANUAL_TEST  1
-#define BUMPY_MANUAL_TEST          0
+/* 手动测试开关: 标定完成后直接激活单边桥, 不依赖导航 */
+#define BRIDGE_MANUAL_TEST 1
 
 #define CM7_0_READY_MAGIC 0x43373031u
 
@@ -87,20 +85,10 @@ int main(void)
     zf_log(0, "Angle calibration OK.");
 
 #if BRIDGE_MANUAL_TEST
-    track_bridge_climb_activate();
-    zf_log(0, "Bridge climb manual test started.");
+    //track_bridge_climb_activate();
+    //zf_log(0, "Bridge climb manual test started.");
 #else
     //track_rotate720_start();   // 测试旋转720
-#endif
-
-#if BUMPY_MANUAL_TEST
-    track_bumpy_activate();
-    zf_log(0, "Bumpy manual test started.");
-#endif
-
-#if SINGLE_BRIDGE_MANUAL_TEST
-    track_single_bridge_activate();
-    zf_log(0, "Single bridge manual test started.");
 #endif
     //jump_start(-0.27f, 3);//三级台阶
     //jump_start(-2.50f, 1);//直接跳过颠簸
@@ -136,13 +124,12 @@ int main(void)
                         jump_start(-0.15f, 3);
                         break;
                     case NAV_REGION_SINGLE_BRIDGE:
-                        track_single_bridge_activate();
-                        break;
                     case NAV_REGION_UPHILL:
                         track_bridge_climb_activate();
                         break;
                     case NAV_REGION_SPEED_BUMP:
                         track_bumpy_activate();
+                        track_bumpy_apply_compliance();
                         break;
                     default:
                         break;
@@ -151,12 +138,11 @@ int main(void)
                 if (nav_out.region_exited) {
                     switch (nav_out.region) {
                     case NAV_REGION_SINGLE_BRIDGE:
-                        track_single_bridge_deactivate();
-                        break;
                     case NAV_REGION_UPHILL:
                         track_bridge_climb_deactivate();
                         break;
                     case NAV_REGION_SPEED_BUMP:
+                        track_bumpy_restore_stiffness();
                         track_bumpy_deactivate();
                         break;
                     case NAV_REGION_ROTATE:
