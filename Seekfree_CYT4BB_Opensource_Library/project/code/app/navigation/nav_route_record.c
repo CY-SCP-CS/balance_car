@@ -8,11 +8,11 @@
 #include "../../common/utils.h"
 #include "../../hmi/indicator/led_buzzer.h"
 
-#define NAV_RECORD_STRAIGHT_SPEED  0.3f
-#define NAV_RECORD_CORNER_SPEED    0.18f
+#define NAV_RECORD_STRAIGHT_SPEED  (-0.3f)
+#define NAV_RECORD_CORNER_SPEED    (-0.18f)
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_WAYPOINT_REACHED_M          0.03f
-#define NAV_RECORD_FINAL_BRAKE_SPEED           (-0.2f)
+#define NAV_RECORD_FINAL_BRAKE_SPEED           0.2f
 #define NAV_RECORD_FINAL_BRAKE_TIME_MS         260u
 #define NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M  0.04f
 #define NAV_RECORD_SHORT_SEGMENT_M             0.015f
@@ -23,8 +23,8 @@
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
-#define NAV_RECORD_ROTATE_CRAWL_SPEED          0.08f
-#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     (-0.10f)
+#define NAV_RECORD_ROTATE_CRAWL_SPEED          (-0.08f)
+#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.10f
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
@@ -185,6 +185,11 @@ static void replay_reset_final_brake(void)
     g_replay_final_braking = false;
     g_replay_final_brake_start_time = 0u;
     g_replay_final_brake_yaw = 0.0f;
+}
+
+static float replay_body_yaw_from_path_yaw(float path_yaw)
+{
+    return nav_wrap_pi(path_yaw + NAV_PI);
 }
 
 static void replay_hold_current_yaw(Nav_Output_t *out, const Nav_Input_t *input)
@@ -508,7 +513,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             replay_advance_waypoint();
             g_replay_final_braking = true;
             g_replay_final_brake_start_time = input->time_ms;
-            g_replay_final_brake_yaw = segment_yaw;
+            g_replay_final_brake_yaw =
+                replay_body_yaw_from_path_yaw(segment_yaw);
             brake_out = replay_final_brake_update(input);
             replay_fill_waypoint_event(&brake_out, cur_index);
             return brake_out;
@@ -528,7 +534,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         yaw_correction = clamp(-NAV_RECORD_CROSSTRACK_GAIN * cross_track_error,
                                -NAV_RECORD_CROSSTRACK_LIMIT_RAD,
                                NAV_RECORD_CROSSTRACK_LIMIT_RAD);
-        target_yaw_cmd = nav_wrap_pi(segment_yaw + yaw_correction);
+        target_yaw_cmd =
+            replay_body_yaw_from_path_yaw(segment_yaw + yaw_correction);
         yaw_error = nav_wrap_pi(target_yaw_cmd - input->yaw_rad);
         abs_yaw_error = fabsf(yaw_error);
 

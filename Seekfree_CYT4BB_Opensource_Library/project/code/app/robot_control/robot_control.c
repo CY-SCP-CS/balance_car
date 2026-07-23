@@ -38,61 +38,6 @@ float robot_control_get_yaw(void)      { return g_odom_theta; }
 #define USE_VMC 0
 #define REMOTE_STEER_GAIN_RAD 6.00f
 #define AIR_BALANCE_GAIN      1.0f    /* 空中平衡环缩放, 轮子反作用力矩稳定身体 */
-/*
-#define CTRL_SPEED_CMD_SCALE       3.3f
-#define CTRL_BRAKE_STOP_RADPS      0.9f
-#define CTRL_BRAKE_CMD_DEADBAND    0.02f
-#define CTRL_BRAKE_TARGET_MIN      0.08f
-#define CTRL_BRAKE_TARGET_MAX      0.38f
-#define CTRL_BRAKE_TARGET_GAIN     0.02f
-
-static float robot_control_speed_abs(float value)
-{
-    return value < 0.0f ? -value : value;
-}
-
-static float robot_control_brake_target(float speed_radps)
-{
-    float brake_mag = CTRL_BRAKE_TARGET_MIN +
-                      CTRL_BRAKE_TARGET_GAIN *
-                      robot_control_speed_abs(speed_radps);
-
-    brake_mag = CLAMP(brake_mag,
-                      CTRL_BRAKE_TARGET_MIN,
-                      CTRL_BRAKE_TARGET_MAX);
-
-    return speed_radps > 0.0f ? -brake_mag : brake_mag;
-}
-
-static float robot_control_apply_reverse_brake(float target_speed,
-                                               const Sensor_data_t *sensor)
-{
-    float speed_radps;
-    bool stop_request;
-    bool reverse_request;
-
-    if (sensor == NULL) {
-        return target_speed;
-    }
-
-    speed_radps = (sensor->motor_left_speed +
-                   sensor->motor_right_speed) * 0.5f;
-    if (robot_control_speed_abs(speed_radps) <= CTRL_BRAKE_STOP_RADPS) {
-        return robot_control_speed_abs(target_speed) <= CTRL_BRAKE_CMD_DEADBAND ?
-            0.0f : target_speed;
-    }
-
-    stop_request =
-        robot_control_speed_abs(target_speed) <= CTRL_BRAKE_CMD_DEADBAND;
-    reverse_request = target_speed * speed_radps < 0.0f;
-
-    if (stop_request || reverse_request) {
-        return robot_control_brake_target(speed_radps);
-    }
-
-    return target_speed;
-}
-*/
 /* 腿部关节 PID 控制器 */
 Leg_PID_t g_leg_left_pid, g_leg_right_pid;
 
@@ -112,13 +57,13 @@ void robot_control_init(void){
     //pitch的PID
     pid_init(&g_pitch_angle_pid, 25.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 270.0f, 0.0f);
     pid_init(&g_pitch_gyro_pid,  -1100.0f, 0.0f, 3.00f, ROBOT_CONTROL_DT, 10000.0f, 3000.0f);
-    pid_init(&g_speed_pid,       -0.32f, -0.06f, -0.00f, ROBOT_CONTROL_DT, 0.48f, 0.082f);  /* 输出倾角(rad): ±8°限幅, ±3°积分 */
+    pid_init(&g_speed_pid,       -0.0f, -0.00f, -0.00f, ROBOT_CONTROL_DT, 0.48f, 0.082f);  /* 输出倾角(rad): ±8°限幅, ±3°积分 */
     //偏航串级: 外环角度, 内环角速度
     pid_init(&g_yaw_angle_pid,    5.0f, 0.5f, 0.0f, ROBOT_CONTROL_DT, MAX_YAW_RATE, 1.0f);
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
     pid_init(&g_leg_speed_pid, 552.0f, 0.97f, 3.81f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
-    pid_init(&g_leg_roll_pid,  -8.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_roll_pid,  0.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
     leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
@@ -396,10 +341,6 @@ void control_task(void){
             if (app_speed != 0.0f) {
                 cmd_local.target_speed = app_speed;
             }
-        }
-        if (track_rotate720_is_active()) {
-            cmd_local.target_speed = 0.0f;
-            cmd_local.target_distance = 0.0f;
         }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
@@ -746,10 +687,7 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed = ctrl->velocity_cmd;  /* [-1, 1], 与 speed_norm 同尺度 */
-       /* robot_control_apply_reverse_brake(ctrl->velocity_cmd *
-                                          CTRL_SPEED_CMD_SCALE,
-                                          sensor);*/
+    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
