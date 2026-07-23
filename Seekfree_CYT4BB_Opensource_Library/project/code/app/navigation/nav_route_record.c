@@ -246,53 +246,83 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
     return out;
 }
 
-static void replay_apply_rotate_prebrake(Nav_Output_t *out,
+static float replay_turn_brake_distance(float speed_mps);
+
+static bool replay_apply_rotate_prebrake(Nav_Output_t *out,
                                          const Nav_Input_t *input,
+                                         float segment_distance,
                                          uint8 target_index,
                                          float target_distance)
 {
     float ratio;
     float speed_range;
+    float brake_distance;
 
     if (out == NULL || input == NULL ||
         target_index >= g_record_state.keypoint_count ||
         g_record_keypoints[target_index].action !=
         NAV_ROUTE_POINT_ACTION_ROTATE720) {
-        return;
+        return false;
     }
 
     if (g_replay_segment_brake_active) {
         if (fabsf(input->speed_mps) <= NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS) {
             g_replay_segment_brake_active = false;
             g_replay_segment_brake_done = true;
+            return false;
         } else {
-            out->velocity_cmd = NAV_RECORD_ROTATE_HARD_BRAKE_SPEED;
-            return;
+            out->velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+            return true;
         }
+    }
+
+    if (g_replay_segment_brake_done) {
+        return false;
+    }
+
+    brake_distance = replay_turn_brake_distance(input->speed_mps);
+    if (!g_replay_segment_brake_done &&
+        segment_distance >= NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M &&
+        fabsf(input->speed_mps) > NAV_RECORD_ROTATE_BRAKE_RELEASE_MPS &&
+        target_distance <= brake_distance) {
+        g_replay_segment_brake_active = true;
+        out->velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+        return true;
+    }
+
+    if (segment_distance >= NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M &&
+        target_distance < NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M) {
+        ratio = 1.0f -
+            clamp(target_distance / NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M,
+                  0.0f,
+                  1.0f);
+
+        out->velocity_cmd += (NAV_RECORD_TURN_PREBRAKE_SPEED -
+                              out->velocity_cmd) * ratio;
     }
 
     if (target_distance <= NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M) {
         if (!g_replay_segment_brake_done) {
             g_replay_segment_brake_active = true;
             out->velocity_cmd = NAV_RECORD_ROTATE_HARD_BRAKE_SPEED;
-            return;
+            return true;
         }
     }
 
     if (target_distance <= NAV_RECORD_ROTATE_CRAWL_DISTANCE_M) {
         out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED;
-        return;
+        return false;
     }
 
     if (target_distance >= NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M) {
-        return;
+        return false;
     }
 
     speed_range = NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M -
                   NAV_RECORD_ROTATE_CRAWL_DISTANCE_M;
     if (speed_range <= 0.0f) {
         out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED;
-        return;
+        return false;
     }
 
     ratio = (target_distance - NAV_RECORD_ROTATE_CRAWL_DISTANCE_M) /
@@ -300,6 +330,7 @@ static void replay_apply_rotate_prebrake(Nav_Output_t *out,
     ratio = clamp(ratio, 0.0f, 1.0f);
     out->velocity_cmd = NAV_RECORD_ROTATE_CRAWL_SPEED +
         (out->velocity_cmd - NAV_RECORD_ROTATE_CRAWL_SPEED) * ratio;
+    return false;
 }
 
 static float replay_upcoming_turn_angle(uint8 target_index,
@@ -635,6 +666,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         float abs_yaw_error;
         float upcoming_turn_rad;
         bool braking_before_turn;
+        bool braking_before_rotate;
         bool passed_waypoint;
         bool final_waypoint;
 
@@ -736,7 +768,15 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         if (braking_before_turn) {
             target_yaw_cmd = input->yaw_rad;
         }
-        replay_apply_rotate_prebrake(&out, input, cur_index, target_distance);
+        braking_before_rotate =
+            replay_apply_rotate_prebrake(&out,
+                                         input,
+                                         segment_distance,
+                                         cur_index,
+                                         target_distance);
+        if (braking_before_rotate) {
+            target_yaw_cmd = input->yaw_rad;
+        }
         out.target_yaw_valid = true;
         out.target_yaw_rad = target_yaw_cmd;
         out.region = NAV_REGION_NORMAL;
