@@ -8,11 +8,11 @@
 #include "../../common/utils.h"
 #include "../../hmi/indicator/led_buzzer.h"
 
-#define NAV_RECORD_STRAIGHT_SPEED  0.3f
-#define NAV_RECORD_CORNER_SPEED    0.18f
+#define NAV_RECORD_STRAIGHT_SPEED  (-0.3f)
+#define NAV_RECORD_CORNER_SPEED    (-0.18f)
 #define NAV_RECORD_TURN_SPEED      0.0f
 #define NAV_RECORD_WAYPOINT_REACHED_M          0.03f
-#define NAV_RECORD_FINAL_BRAKE_SPEED           (-0.2f)
+#define NAV_RECORD_FINAL_BRAKE_SPEED           0.2f
 #define NAV_RECORD_FINAL_BRAKE_TIME_MS         260u
 #define NAV_RECORD_WAYPOINT_PASS_CROSSTRACK_M  0.04f
 #define NAV_RECORD_SHORT_SEGMENT_M             0.015f
@@ -23,8 +23,8 @@
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
-#define NAV_RECORD_ROTATE_CRAWL_SPEED          0.08f
-#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     (-0.10f)
+#define NAV_RECORD_ROTATE_CRAWL_SPEED          (-0.08f)
+#define NAV_RECORD_ROTATE_HARD_BRAKE_SPEED     0.10f
 
 static Nav_Keypoint_t g_record_keypoints[NAV_RECORD_MAX_KEYPOINTS];
 static Nav_Route_Record_State_t g_record_state;
