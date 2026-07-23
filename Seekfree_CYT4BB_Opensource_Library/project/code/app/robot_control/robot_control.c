@@ -43,8 +43,10 @@ float robot_control_get_speed_mps(void)
  */
 #define USE_VMC 0
 #define REMOTE_STEER_GAIN_RAD 6.00f
-#define CMD_VELOCITY_RAMP_RATE 8.0f
-#define CMD_VELOCITY_STOP_EPS  0.002f
+#define CMD_VELOCITY_ACCEL_RATE 8.0f
+#define CMD_VELOCITY_DECEL_RATE 14.0f
+#define CMD_VELOCITY_BRAKE_RATE 30.0f
+#define CMD_VELOCITY_STOP_EPS   0.002f
 #define AIR_BALANCE_GAIN      1.0f    /* 空中平衡环缩放, 轮子反作用力矩稳定身体 */
 /* 腿部关节 PID 控制器 */
 Leg_PID_t g_leg_left_pid, g_leg_right_pid;
@@ -699,7 +701,16 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
     {
         static float velocity_cmd_smooth = 0.0f;
         float velocity_delta = ctrl->velocity_cmd - velocity_cmd_smooth;
-        float max_delta = CMD_VELOCITY_RAMP_RATE * ROBOT_CONTROL_DT;
+        float velocity_rate = CMD_VELOCITY_ACCEL_RATE;
+        float max_delta;
+
+        if (ctrl->velocity_cmd * velocity_cmd_smooth < 0.0f) {
+            velocity_rate = CMD_VELOCITY_BRAKE_RATE;
+        } else if (fabsf(ctrl->velocity_cmd) < fabsf(velocity_cmd_smooth)) {
+            velocity_rate = CMD_VELOCITY_DECEL_RATE;
+        }
+
+        max_delta = velocity_rate * ROBOT_CONTROL_DT;
 
         velocity_delta = CLAMP(velocity_delta, -max_delta, max_delta);
         velocity_cmd_smooth += velocity_delta;
