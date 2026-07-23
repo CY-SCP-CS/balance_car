@@ -3,8 +3,8 @@
 
 #include "nav_engine.h"
 
-#define NAV_RECORD_MAX_KEYPOINTS  64u
-#define NAV_RECORD_MAX_SEGMENTS   64u
+#define NAV_RECORD_MAX_KEYPOINTS  64u /* 最多保存的关键点数量；调大会增加路线容量和flash占用 */
+#define NAV_RECORD_MAX_SEGMENTS   64u /* 最多支持的路线段数量；应与关键点容量保持匹配 */
 
 typedef enum {
     NAV_ROUTE_IDLE = 0,
