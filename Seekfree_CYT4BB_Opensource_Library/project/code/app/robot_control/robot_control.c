@@ -62,7 +62,7 @@ void robot_control_init(void){
     pid_init(&g_yaw_pid,       2150.0f, 10.0f, 0.0f, ROBOT_CONTROL_DT, 10000.0f, 2000.0f);
     //针对腿位置的PID，需要在完整的车上调试
     pid_init(&g_leg_speed_pid, 552.0f, 0.97f, 3.81f, ROBOT_CONTROL_DT, 75.0f, 50.0f);
-    pid_init(&g_leg_roll_pid,  -8.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
+    pid_init(&g_leg_roll_pid,  0.0f, 0.0f, 0.0f, ROBOT_CONTROL_DT, 1.0f, 0.5f);
 
     //关节角度的PID，需要在完整的车上调试
     leg_pid_init(&g_leg_left_pid,  1200.0f, 0.0f, 4.0f, 10000.0f, 0.0f);
