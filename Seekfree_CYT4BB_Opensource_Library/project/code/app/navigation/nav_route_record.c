@@ -187,6 +187,11 @@ static void replay_reset_final_brake(void)
     g_replay_final_brake_yaw = 0.0f;
 }
 
+static float replay_body_yaw_from_path_yaw(float path_yaw)
+{
+    return nav_wrap_pi(path_yaw + NAV_PI);
+}
+
 static void replay_hold_current_yaw(Nav_Output_t *out, const Nav_Input_t *input)
 {
     if (out == NULL || input == NULL) {
@@ -508,7 +513,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
             replay_advance_waypoint();
             g_replay_final_braking = true;
             g_replay_final_brake_start_time = input->time_ms;
-            g_replay_final_brake_yaw = segment_yaw;
+            g_replay_final_brake_yaw =
+                replay_body_yaw_from_path_yaw(segment_yaw);
             brake_out = replay_final_brake_update(input);
             replay_fill_waypoint_event(&brake_out, cur_index);
             return brake_out;
@@ -528,7 +534,8 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         yaw_correction = clamp(-NAV_RECORD_CROSSTRACK_GAIN * cross_track_error,
                                -NAV_RECORD_CROSSTRACK_LIMIT_RAD,
                                NAV_RECORD_CROSSTRACK_LIMIT_RAD);
-        target_yaw_cmd = nav_wrap_pi(segment_yaw + yaw_correction);
+        target_yaw_cmd =
+            replay_body_yaw_from_path_yaw(segment_yaw + yaw_correction);
         yaw_error = nav_wrap_pi(target_yaw_cmd - input->yaw_rad);
         abs_yaw_error = fabsf(yaw_error);
 
