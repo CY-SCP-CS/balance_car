@@ -17,7 +17,7 @@
 
 /* 手动测试开关: 标定完成后直接激活, 不依赖导航 */
 #define BRIDGE_MANUAL_TEST         0
-#define SINGLE_BRIDGE_MANUAL_TEST  1
+#define SINGLE_BRIDGE_MANUAL_TEST  0
 #define BUMPY_MANUAL_TEST          0
 
 #define CM7_0_READY_MAGIC 0x43373031u
