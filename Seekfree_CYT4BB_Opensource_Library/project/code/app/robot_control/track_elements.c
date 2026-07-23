@@ -115,11 +115,8 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
 
         float final_delta = rotate720_wrap_pi(path_target_direction -
                                               sensor->angle_yaw);
-        if (final_delta < 0.0f) {
-            final_delta += 2.0f * M_PI;
-        }
-        g_rotate720_dir = 1.0f;
-        g_rotate720_target_accum = ROT720_BASE_TURN + final_delta;
+        g_rotate720_dir = (final_delta < 0.0f) ? -1.0f : 1.0f;
+        g_rotate720_target_accum = ROT720_BASE_TURN + fabsf(final_delta);
     }
 
     /* 每周期递增目标角度, 不归一化 (yaw 误差归一化逻辑处理角度回绕) */
