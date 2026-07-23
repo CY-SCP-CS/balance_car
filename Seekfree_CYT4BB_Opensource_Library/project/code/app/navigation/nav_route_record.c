@@ -26,6 +26,7 @@
 #define NAV_RECORD_TURN_BRAKE_MARGIN_M         0.18f
 #define NAV_RECORD_TURN_BRAKE_MAX_LOOKAHEAD_M  1.00f
 #define NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M   0.90f
+#define NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M 0.80f
 #define NAV_RECORD_TURN_PREBRAKE_YAW_RAD       (45.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
@@ -314,6 +315,7 @@ static float replay_turn_brake_distance(float speed_mps)
 
 static bool replay_apply_turn_prebrake(Nav_Output_t *out,
                                        const Nav_Input_t *input,
+                                       float segment_distance,
                                        float target_distance,
                                        float upcoming_turn_rad)
 {
@@ -322,6 +324,7 @@ static bool replay_apply_turn_prebrake(Nav_Output_t *out,
 
     if (out == NULL ||
         input == NULL ||
+        segment_distance < NAV_RECORD_TURN_PREBRAKE_MIN_SEGMENT_M ||
         upcoming_turn_rad < NAV_RECORD_TURN_PREBRAKE_YAW_RAD ||
         out->velocity_cmd >= 0.0f) {
         return false;
@@ -673,6 +676,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         braking_before_turn =
             replay_apply_turn_prebrake(&out,
                                        input,
+                                       segment_distance,
                                        target_distance,
                                        upcoming_turn_rad);
         if (braking_before_turn) {
