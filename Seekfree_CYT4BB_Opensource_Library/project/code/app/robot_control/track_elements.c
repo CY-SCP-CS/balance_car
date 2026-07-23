@@ -25,6 +25,8 @@ static float            g_rotate720_target = 0.0f;
 static float            g_rotate720_target_accum = ROT720_BASE_TURN;
 static float            g_rotate720_dir = 1.0f;
 static bool             g_rotate720_target_valid = false;
+static float            g_rotate720_final_target = 0.0f;
+static bool             g_rotate720_final_target_valid = false;
 
 static float rotate720_wrap_pi(float angle)
 {
@@ -47,9 +49,12 @@ void track_rotate720_init(void)
     g_rotate720_target_accum = ROT720_BASE_TURN;
     g_rotate720_dir = 1.0f;
     g_rotate720_target_valid = false;
+    g_rotate720_final_target = 0.0f;
+    g_rotate720_final_target_valid = false;
 }
 
-void track_rotate720_start(void)
+static void rotate720_start_common(bool final_target_valid,
+                                   float final_target)
 {
     if (g_rotate720_state == ROTATE720_IDLE) {
         g_rotate720_state  = ROTATE720_BRAKING;
@@ -58,7 +63,19 @@ void track_rotate720_start(void)
         g_rotate720_target_accum = ROT720_BASE_TURN;
         g_rotate720_dir = 1.0f;
         g_rotate720_target_valid = false;
+        g_rotate720_final_target = final_target;
+        g_rotate720_final_target_valid = final_target_valid;
     }
+}
+
+void track_rotate720_start(void)
+{
+    rotate720_start_common(false, 0.0f);
+}
+
+void track_rotate720_start_with_target(float target_direction)
+{
+    rotate720_start_common(true, target_direction);
 }
 
 bool track_rotate720_is_active(void)
@@ -85,6 +102,8 @@ void track_rotate720_reset(void)
     g_rotate720_target_accum = ROT720_BASE_TURN;
     g_rotate720_dir = 1.0f;
     g_rotate720_target_valid = false;
+    g_rotate720_final_target = 0.0f;
+    g_rotate720_final_target_valid = false;
 }
 
 void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
@@ -94,7 +113,9 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
         return;
     }
 
-    float path_target_direction = cmd->target_direction;
+    float path_target_direction = g_rotate720_final_target_valid ?
+                                  g_rotate720_final_target :
+                                  cmd->target_direction;
 
     cmd->target_speed = 0.0f;
     cmd->target_distance = 0.0f;

@@ -8,6 +8,7 @@
 /* ===== 1. 原地旋转720度 ===== */
 void  track_rotate720_init(void);
 void  track_rotate720_start(void);
+void  track_rotate720_start_with_target(float target_direction);
 bool  track_rotate720_is_active(void);
 bool  track_rotate720_is_done(void);
 bool  track_rotate720_should_suppress_odom(void);

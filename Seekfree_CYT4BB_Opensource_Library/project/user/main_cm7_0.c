@@ -156,7 +156,11 @@ int main(void)
                     nav_out.waypoint_action ==
                     NAV_ROUTE_POINT_ACTION_ROTATE720) {
                     track_rotate720_reset();
-                    track_rotate720_start();
+                    if (nav_out.target_yaw_valid) {
+                        track_rotate720_start_with_target(nav_out.target_yaw_rad);
+                    } else {
+                        track_rotate720_start();
+                    }
                 }
             }
         }
