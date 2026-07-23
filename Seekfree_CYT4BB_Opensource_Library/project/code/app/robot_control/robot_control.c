@@ -43,6 +43,8 @@ float robot_control_get_speed_mps(void)
  */
 #define USE_VMC 0
 #define REMOTE_STEER_GAIN_RAD 6.00f
+#define CMD_VELOCITY_RAMP_RATE 8.0f
+#define CMD_VELOCITY_STOP_EPS  0.002f
 #define AIR_BALANCE_GAIN      1.0f    /* 空中平衡环缩放, 轮子反作用力矩稳定身体 */
 /* 腿部关节 PID 控制器 */
 Leg_PID_t g_leg_left_pid, g_leg_right_pid;
@@ -694,7 +696,20 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
         prev_rb = sensor->joint_right_back_angle;
     }
 
-    cmd->target_speed     = ctrl->velocity_cmd * 3.3f; //单边桥、爬坡测试速度-0.5f;
+    {
+        static float velocity_cmd_smooth = 0.0f;
+        float velocity_delta = ctrl->velocity_cmd - velocity_cmd_smooth;
+        float max_delta = CMD_VELOCITY_RAMP_RATE * ROBOT_CONTROL_DT;
+
+        velocity_delta = CLAMP(velocity_delta, -max_delta, max_delta);
+        velocity_cmd_smooth += velocity_delta;
+        if (fabsf(ctrl->velocity_cmd) < CMD_VELOCITY_STOP_EPS &&
+            fabsf(velocity_cmd_smooth) < CMD_VELOCITY_STOP_EPS) {
+            velocity_cmd_smooth = 0.0f;
+        }
+
+        cmd->target_speed = velocity_cmd_smooth * TARGET_SPEED_MAX;
+    }
     cmd->target_roll      = 0.0f;
     cmd->target_height    = 0.0f;
     cmd->target_distance  = 0.0f;
