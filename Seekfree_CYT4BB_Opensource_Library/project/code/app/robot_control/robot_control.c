@@ -106,6 +106,7 @@ static VMC_Config_t g_vmc_config;
 PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
+static float g_fwd_brake_comp = 1.30f;  /* 前向减速补偿: 前进时 leg_speed_pid 输出放大系数 */
 
 void robot_control_init(void){
     //pitch的PID
@@ -142,6 +143,7 @@ void robot_control_init(void){
     remote_debug_bind(5, &g_leg_roll_pid.kp);
     remote_debug_bind(6, &g_yaw_pid.kp);
     remote_debug_bind(7, &g_yaw_pid.kd);
+    remote_debug_bind(8, &g_fwd_brake_comp);
 
 #if USE_VMC
     remote_debug_bind(6, &g_vmc_config.kp);
@@ -401,6 +403,18 @@ void control_task(void){
         }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
+
+        /* 前向减速补偿: 重心偏前导致前进时刹车力弱,
+           g_leg_speed_pid 输出为负 (足端后拉) 且车速为正时, 放大足端偏移量 */
+        {
+            float speed_fwd = (sensor_local.motor_left_speed + sensor_local.motor_right_speed) / 2.0f;
+            if (speed_fwd > 0.5f && foot_position_left.x < -0.5f) {
+                foot_position_left.x  *= g_fwd_brake_comp;
+                foot_position_right.x *= g_fwd_brake_comp;
+                foot_position_left.x   = CLAMP(foot_position_left.x,  -80.0f, 80.0f);
+                foot_position_right.x  = CLAMP(foot_position_right.x, -80.0f, 80.0f);
+            }
+        }
 
         /* 跳跃期间关闭 roll 闭环, 由跳跃状态机自己控制 Y */
         if (jump_is_active()) {
