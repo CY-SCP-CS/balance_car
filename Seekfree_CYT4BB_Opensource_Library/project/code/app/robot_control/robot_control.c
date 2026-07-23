@@ -624,31 +624,35 @@ void sensor_cmd_update(const Ctrl_Input_t *ctrl, Sensor_data_t *sensor, Move_cmd
                 sensor->motor_right_speed = motor_right_filt;
             }
 
-            /* 平均角增量 → 线距离 (m), 右轮镜像需乘 RIGHT_MOTOR_DIR */
-            dist = ((dl + dr * RIGHT_MOTOR_DIR) / 2.0f) * DEG_TO_RAD * LEG_WHEEL_RADIUS * 0.001f;
-
-            /* 路径用绝对值积分 */
-            g_odom_path += fabsf(dist) * g_odom_scale;
-
-            /* x, y 弧线积分 */
-            float theta_cur  = sensor->angle_yaw;
-            float theta_prev = g_odom_theta;
-            float d_theta    = theta_cur - theta_prev;
-            while (d_theta >  M_PI) d_theta -= 2.0f * M_PI;
-            while (d_theta < -M_PI) d_theta += 2.0f * M_PI;
-
-            if (fabsf(d_theta) < 0.002f) {
-                /* 近似直线 */
-                g_odom_x += dist * cosf(theta_prev) * g_odom_scale;
-                g_odom_y += dist * sinf(theta_prev) * g_odom_scale;
+            if (track_rotate720_should_suppress_odom()) {
+                g_odom_theta = sensor->angle_yaw;
             } else {
-                /* 弧线: R = dist/dθ 精确积分 */
-                float R = dist / d_theta;
-                g_odom_x += R * (sinf(theta_cur) - sinf(theta_prev)) * g_odom_scale;
-                g_odom_y += R * (cosf(theta_prev) - cosf(theta_cur)) * g_odom_scale;
-            }
+                /* 平均角增量 → 线距离 (m), 右轮镜像需乘 RIGHT_MOTOR_DIR */
+                dist = ((dl + dr * RIGHT_MOTOR_DIR) / 2.0f) * DEG_TO_RAD * LEG_WHEEL_RADIUS * 0.001f;
 
-            g_odom_theta = theta_cur;
+                /* 路径用绝对值积分 */
+                g_odom_path += fabsf(dist) * g_odom_scale;
+
+                /* x, y 弧线积分 */
+                float theta_cur  = sensor->angle_yaw;
+                float theta_prev = g_odom_theta;
+                float d_theta    = theta_cur - theta_prev;
+                while (d_theta >  M_PI) d_theta -= 2.0f * M_PI;
+                while (d_theta < -M_PI) d_theta += 2.0f * M_PI;
+
+                if (fabsf(d_theta) < 0.002f) {
+                    /* 近似直线 */
+                    g_odom_x += dist * cosf(theta_prev) * g_odom_scale;
+                    g_odom_y += dist * sinf(theta_prev) * g_odom_scale;
+                } else {
+                    /* 弧线: R = dist/dθ 精确积分 */
+                    float R = dist / d_theta;
+                    g_odom_x += R * (sinf(theta_cur) - sinf(theta_prev)) * g_odom_scale;
+                    g_odom_y += R * (cosf(theta_prev) - cosf(theta_cur)) * g_odom_scale;
+                }
+
+                g_odom_theta = theta_cur;
+            }
         }
     }
 

@@ -10,6 +10,7 @@ void  track_rotate720_init(void);
 void  track_rotate720_start(void);
 bool  track_rotate720_is_active(void);
 bool  track_rotate720_is_done(void);
+bool  track_rotate720_should_suppress_odom(void);
 void  track_rotate720_reset(void);
 void  track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd);
 

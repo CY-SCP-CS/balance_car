@@ -86,6 +86,12 @@ bool track_rotate720_is_done(void)
     return (g_rotate720_state == ROTATE720_DONE);
 }
 
+bool track_rotate720_should_suppress_odom(void)
+{
+    return (g_rotate720_state == ROTATE720_ACTIVE &&
+            g_rotate720_accum < ROT720_BASE_TURN);
+}
+
 void track_rotate720_reset(void)
 {
     g_rotate720_state  = ROTATE720_IDLE;
