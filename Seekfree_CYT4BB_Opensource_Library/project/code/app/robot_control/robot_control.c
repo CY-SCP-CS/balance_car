@@ -51,7 +51,7 @@ static VMC_Config_t g_vmc_config;
 PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
 static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
-static float g_fwd_brake_comp = 1.30f;  /* 前向减速补偿: 前进时 leg_speed_pid 输出放大系数 */
+static float g_brake_p_gain = -0.3f;  /* 刹车 P 增益, slot 8 可调 */
 
 void robot_control_init(void){
     //pitch的PID
@@ -88,7 +88,7 @@ void robot_control_init(void){
     remote_debug_bind(5, &g_leg_roll_pid.kp);
     remote_debug_bind(6, &g_yaw_pid.kp);
     remote_debug_bind(7, &g_yaw_pid.kd);
-    remote_debug_bind(8, &g_fwd_brake_comp);
+    remote_debug_bind(8, &g_brake_p_gain);
 
 #if USE_VMC
     remote_debug_bind(6, &g_vmc_config.kp);
@@ -252,7 +252,20 @@ void control_task(void){
     /* ── 轮式平衡 + 偏航 ── */
     if (!airborne) {
         {
-            float pitch_target = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : speed_control(&sensor_local, &g_speed_pid, cmd_local.target_speed);
+            float pitch_target = 0.0f;
+
+            if (!jump_is_active() && !jump_is_in_cooldown()) {
+                /* speed_control 已关闭 (g_speed_pid 增益均为 0), 用纯 P 刹车 */
+                float speed_norm = (sensor_local.motor_left_speed + sensor_local.motor_right_speed) / 120.0f;
+
+                bool stop_request    = (fabsf(cmd_local.target_speed) < 0.02f && fabsf(speed_norm) > 0.015f);
+                bool reverse_request = (cmd_local.target_speed * speed_norm < -0.0003f);
+
+                if (stop_request || reverse_request) {
+                    pitch_target = -g_brake_p_gain * speed_norm;
+                    pitch_target = CLAMP(pitch_target, -0.25f, 0.25f);
+                }
+            }
             float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
             g_motor_cmd.left_motor_pwm  = ROUND(pwm_base);
             g_motor_cmd.right_motor_pwm = ROUND(-pwm_base);
@@ -344,18 +357,6 @@ void control_task(void){
         }
         leg_cmd_solve(&cmd_local, &sensor_local, &g_leg_speed_pid, &g_leg_roll_pid,
             &foot_position_left, &foot_position_right);
-
-        /* 前向减速补偿: 重心偏前导致前进时刹车力弱,
-           g_leg_speed_pid 输出为负 (足端后拉) 且车速为正时, 放大足端偏移量 */
-        {
-            float speed_fwd = (sensor_local.motor_left_speed + sensor_local.motor_right_speed) / 2.0f;
-            if (speed_fwd > 0.5f && foot_position_left.x < -0.5f) {
-                foot_position_left.x  *= g_fwd_brake_comp;
-                foot_position_right.x *= g_fwd_brake_comp;
-                foot_position_left.x   = CLAMP(foot_position_left.x,  -80.0f, 80.0f);
-                foot_position_right.x  = CLAMP(foot_position_right.x, -80.0f, 80.0f);
-            }
-        }
 
         /* 跳跃期间关闭 roll 闭环, 由跳跃状态机自己控制 Y */
         if (jump_is_active()) {
