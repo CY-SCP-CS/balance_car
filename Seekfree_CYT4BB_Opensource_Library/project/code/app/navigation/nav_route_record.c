@@ -20,15 +20,14 @@
 #define NAV_RECORD_CROSSTRACK_LIMIT_RAD        (20.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_TURN_READY_SPEED_MPS        0.10f
 #define NAV_RECORD_TURN_BRAKE_RELEASE_MPS      0.18f
 #define NAV_RECORD_TURN_BRAKE_SPEED            0.18f
-#define NAV_RECORD_TURN_BRAKE_DECEL_MPS2       1.20f
-#define NAV_RECORD_TURN_BRAKE_MARGIN_M         0.08f
-#define NAV_RECORD_TURN_BRAKE_MAX_LOOKAHEAD_M  0.70f
-#define NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M   0.50f
+#define NAV_RECORD_TURN_BRAKE_DECEL_MPS2       0.80f
+#define NAV_RECORD_TURN_BRAKE_MARGIN_M         0.18f
+#define NAV_RECORD_TURN_BRAKE_MAX_LOOKAHEAD_M  1.00f
+#define NAV_RECORD_TURN_PREBRAKE_LOOKAHEAD_M   0.90f
 #define NAV_RECORD_TURN_PREBRAKE_YAW_RAD       (45.0f * NAV_DEG_TO_RAD)
-#define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.08f)
+#define NAV_RECORD_TURN_PREBRAKE_SPEED         (-0.06f)
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
@@ -221,19 +220,9 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
         return out;
     }
 
-    if (fabsf(input->speed_mps) <= NAV_RECORD_TURN_READY_SPEED_MPS) {
-        replay_fill_waypoint_event(&out, index);
-        replay_advance_waypoint();
-        replay_hold_current_yaw(&out, input);
-        return out;
-    }
-
-    out.velocity_cmd =
-        fabsf(input->speed_mps) > NAV_RECORD_TURN_BRAKE_RELEASE_MPS ?
-        NAV_RECORD_TURN_BRAKE_SPEED : NAV_RECORD_TURN_SPEED;
-    out.target_yaw_valid = true;
-    out.target_yaw_rad = input->yaw_rad;
-    out.region = NAV_REGION_NORMAL;
+    replay_fill_waypoint_event(&out, index);
+    replay_advance_waypoint();
+    replay_hold_current_yaw(&out, input);
     return out;
 }
 
@@ -674,17 +663,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         abs_yaw_error = fabsf(yaw_error);
 
         if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
-            if (fabsf(input->speed_mps) >
-                NAV_RECORD_TURN_BRAKE_RELEASE_MPS) {
-                out.velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
-                target_yaw_cmd = input->yaw_rad;
-            } else if (fabsf(input->speed_mps) >
-                       NAV_RECORD_TURN_READY_SPEED_MPS) {
-                out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-                target_yaw_cmd = input->yaw_rad;
-            } else {
-                out.velocity_cmd = NAV_RECORD_TURN_SPEED;
-            }
+            out.velocity_cmd = NAV_RECORD_TURN_SPEED;
         } else {
             out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
             if (abs_yaw_error >= NAV_RECORD_SLOW_YAW_ERROR_RAD) {
