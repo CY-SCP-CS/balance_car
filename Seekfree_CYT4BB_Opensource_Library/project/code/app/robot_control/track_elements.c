@@ -7,11 +7,11 @@
 
 /* =========================== 原地旋转720度 =========================== */
 
-#define ROT720_SPEED      (3.5f * M_PI)   /* 450°/s */
-#define ROT720_TARGET     (4.0f * M_PI)   /* 720° = 4π rad */
-#define ROT720_MARGIN     (0.0f * M_PI)   /* 10% 冗余 ≈ 72° */
+#define ROT720_SPEED      (3.5f * M_PI)   /* 630°/s */
+#define ROT720_BASE_TURN  (4.0f * M_PI)   /* 先转两整圈 */
+#define ROT720_MARGIN     (0.0f * M_PI)   /* 停止角度冗余 */
 #define ROT720_LEAN_GAIN  0.35f           /* 压弯系数 (原0.2) */
-#define ROT720_STOP_SPEED_MPS   0.03f
+#define ROT720_STOP_SPEED_MPS   0.10f
 #define ROT720_STOP_HOLD_TIME_S 0.08f
 
 typedef enum {
@@ -24,8 +24,23 @@ typedef enum {
 static Rotate720State_t g_rotate720_state = ROTATE720_IDLE;
 static float            g_rotate720_accum = 0.0f;
 static float            g_rotate720_target = 0.0f;
+static float            g_rotate720_target_accum = ROT720_BASE_TURN;
+static float            g_rotate720_dir = 1.0f;
 static float            g_rotate720_stop_hold_s = 0.0f;
 static bool             g_rotate720_target_valid = false;
+
+static float rotate720_wrap_pi(float angle)
+{
+    while (angle > M_PI) {
+        angle -= 2.0f * M_PI;
+    }
+
+    while (angle < -M_PI) {
+        angle += 2.0f * M_PI;
+    }
+
+    return angle;
+}
 
 static float rotate720_forward_speed_mps(const Sensor_data_t *sensor)
 {
@@ -41,6 +56,8 @@ void track_rotate720_init(void)
     g_rotate720_state  = ROTATE720_IDLE;
     g_rotate720_accum  = 0.0f;
     g_rotate720_target = 0.0f;
+    g_rotate720_target_accum = ROT720_BASE_TURN;
+    g_rotate720_dir = 1.0f;
     g_rotate720_stop_hold_s = 0.0f;
     g_rotate720_target_valid = false;
 }
@@ -51,6 +68,8 @@ void track_rotate720_start(void)
         g_rotate720_state  = ROTATE720_BRAKING;
         g_rotate720_accum  = 0.0f;
         g_rotate720_target = 0.0f;
+        g_rotate720_target_accum = ROT720_BASE_TURN;
+        g_rotate720_dir = 1.0f;
         g_rotate720_stop_hold_s = 0.0f;
         g_rotate720_target_valid = false;
     }
@@ -72,6 +91,8 @@ void track_rotate720_reset(void)
     g_rotate720_state  = ROTATE720_IDLE;
     g_rotate720_accum  = 0.0f;
     g_rotate720_target = 0.0f;
+    g_rotate720_target_accum = ROT720_BASE_TURN;
+    g_rotate720_dir = 1.0f;
     g_rotate720_stop_hold_s = 0.0f;
     g_rotate720_target_valid = false;
 }
@@ -82,6 +103,8 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
         g_rotate720_state != ROTATE720_ACTIVE) {
         return;
     }
+
+    float path_target_direction = cmd->target_direction;
 
     cmd->target_speed = 0.0f;
     cmd->target_distance = 0.0f;
@@ -108,10 +131,18 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
         g_rotate720_state = ROTATE720_ACTIVE;
         g_rotate720_accum = 0.0f;
         g_rotate720_target = sensor->angle_yaw;
+
+        float final_delta = rotate720_wrap_pi(path_target_direction -
+                                              sensor->angle_yaw);
+        if (final_delta < 0.0f) {
+            final_delta += 2.0f * M_PI;
+        }
+        g_rotate720_dir = 1.0f;
+        g_rotate720_target_accum = ROT720_BASE_TURN + final_delta;
     }
 
     /* 每周期递增目标角度, 不归一化 (yaw 误差归一化逻辑处理角度回绕) */
-    g_rotate720_target += ROT720_SPEED * ROBOT_CONTROL_DT;
+    g_rotate720_target += g_rotate720_dir * ROT720_SPEED * ROBOT_CONTROL_DT;
     cmd->target_direction = g_rotate720_target;
 
     /* 增强压弯: 旋转期间用更高系数 */
@@ -121,7 +152,7 @@ void track_rotate720_update(Sensor_data_t *sensor, Move_cmd_t *cmd)
     /* 用实际 gyro 积分累积转角 (取绝对值, 方向由速率指令保证) */
     g_rotate720_accum += fabsf(sensor->gyro_yaw) * ROBOT_CONTROL_DT;
 
-    if (g_rotate720_accum >= ROT720_TARGET + ROT720_MARGIN) {
+    if (g_rotate720_accum >= g_rotate720_target_accum + ROT720_MARGIN) {
         g_rotate720_state = ROTATE720_DONE;
     }
 }
