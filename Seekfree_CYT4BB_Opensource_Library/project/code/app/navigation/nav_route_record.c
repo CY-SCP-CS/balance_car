@@ -21,7 +21,9 @@
 #define NAV_RECORD_SLOW_YAW_ERROR_RAD          (10.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_IN_PLACE_YAW_RAD       (25.0f * NAV_DEG_TO_RAD)
 #define NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS   0.05f
-#define NAV_RECORD_TURN_BRAKE_SPEED            0.30f
+#define NAV_RECORD_TURN_BRAKE_START_SPEED      0.08f
+#define NAV_RECORD_TURN_BRAKE_MAX_SPEED        0.18f
+#define NAV_RECORD_TURN_BRAKE_RAMP_RATE        0.60f
 #define NAV_RECORD_ROTATE_PREBRAKE_DISTANCE_M  0.16f
 #define NAV_RECORD_ROTATE_CRAWL_DISTANCE_M     0.07f
 #define NAV_RECORD_ROTATE_HARD_BRAKE_DISTANCE_M 0.035f
@@ -43,6 +45,9 @@ static float g_replay_start_yaw;
 static bool g_replay_final_braking;
 static uint32 g_replay_final_brake_start_time;
 static float g_replay_final_brake_yaw;
+static bool g_replay_turn_brake_active;
+static float g_replay_turn_brake_speed;
+static uint32 g_replay_turn_brake_time;
 
 static void record_set_origin(const Nav_Input_t *input)
 {
@@ -189,6 +194,40 @@ static void replay_reset_final_brake(void)
     g_replay_final_brake_yaw = 0.0f;
 }
 
+static void replay_reset_turn_brake(void)
+{
+    g_replay_turn_brake_active = false;
+    g_replay_turn_brake_speed = 0.0f;
+    g_replay_turn_brake_time = 0u;
+}
+
+static float replay_update_turn_brake(uint32 now_ms)
+{
+    uint32 dt_ms;
+    float dt_s;
+
+    if (!g_replay_turn_brake_active) {
+        g_replay_turn_brake_active = true;
+        g_replay_turn_brake_speed = NAV_RECORD_TURN_BRAKE_START_SPEED;
+        g_replay_turn_brake_time = now_ms;
+        return g_replay_turn_brake_speed;
+    }
+
+    dt_ms = (uint32)(now_ms - g_replay_turn_brake_time);
+    if (dt_ms == 0u) {
+        return g_replay_turn_brake_speed;
+    }
+
+    dt_s = (float)dt_ms * 0.001f;
+    g_replay_turn_brake_speed += NAV_RECORD_TURN_BRAKE_RAMP_RATE * dt_s;
+    g_replay_turn_brake_speed = clamp(g_replay_turn_brake_speed,
+                                      NAV_RECORD_TURN_BRAKE_START_SPEED,
+                                      NAV_RECORD_TURN_BRAKE_MAX_SPEED);
+    g_replay_turn_brake_time = now_ms;
+
+    return g_replay_turn_brake_speed;
+}
+
 static float replay_body_yaw_from_path_yaw(float path_yaw)
 {
     return nav_wrap_pi(path_yaw + NAV_PI);
@@ -215,13 +254,14 @@ static Nav_Output_t replay_rotate_action_brake_update(const Nav_Input_t *input,
     }
 
     if (fabsf(input->speed_mps) <= NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS) {
+        replay_reset_turn_brake();
         replay_fill_waypoint_event(&out, index);
         replay_advance_waypoint();
         replay_hold_current_yaw(&out, input);
         return out;
     }
 
-    out.velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+    out.velocity_cmd = replay_update_turn_brake(input->time_ms);
     out.target_yaw_valid = true;
     out.target_yaw_rad = input->yaw_rad;
     out.region = NAV_REGION_NORMAL;
@@ -302,6 +342,7 @@ void nav_route_record_notify_navigation_stopped(bool finished,
         (finished || safety_stop)) {
         g_record_state.mode = g_record_state.route_ready ?
             NAV_ROUTE_READY : NAV_ROUTE_IDLE;
+        replay_reset_turn_brake();
     }
 }
 
@@ -318,6 +359,7 @@ bool nav_route_record_start(const Nav_Input_t *input)
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
     replay_reset_final_brake();
+    replay_reset_turn_brake();
 
     record_set_origin(input);
     record_keypoint_from_input(0u, input);
@@ -383,6 +425,7 @@ void nav_route_record_reset(void)
     g_record_state.route_ready = false;
     g_record_state.overflow = false;
     replay_reset_final_brake();
+    replay_reset_turn_brake();
 }
 
 static bool set_loaded_keypoints_ready(uint8 keypoint_count)
@@ -443,6 +486,7 @@ bool nav_route_replay_start(const Nav_Input_t *input)
     g_replay_start_y = input->y_m;
     g_replay_start_yaw = input->yaw_rad;
     replay_reset_final_brake();
+    replay_reset_turn_brake();
 
     return true;
 }
@@ -464,6 +508,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         g_record_state.mode = NAV_ROUTE_READY;
         g_record_state.replay_index = 0u;
         replay_reset_final_brake();
+        replay_reset_turn_brake();
         out.safety_stop = true;
         replay_hold_current_yaw(&out, input);
         return out;
@@ -582,11 +627,13 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
         if (abs_yaw_error >= NAV_RECORD_TURN_IN_PLACE_YAW_RAD) {
             if (fabsf(input->speed_mps) >
                 NAV_RECORD_TURN_BRAKE_STOP_SPEED_MPS) {
-                out.velocity_cmd = NAV_RECORD_TURN_BRAKE_SPEED;
+                out.velocity_cmd = replay_update_turn_brake(input->time_ms);
             } else {
+                replay_reset_turn_brake();
                 out.velocity_cmd = NAV_RECORD_TURN_SPEED;
             }
         } else {
+            replay_reset_turn_brake();
             out.velocity_cmd = NAV_RECORD_STRAIGHT_SPEED;
             if (abs_yaw_error >= NAV_RECORD_SLOW_YAW_ERROR_RAD) {
                 out.velocity_cmd = NAV_RECORD_CORNER_SPEED;
@@ -602,6 +649,7 @@ Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
     g_record_state.mode = NAV_ROUTE_READY;
     g_record_state.replay_index = 0u;
     replay_reset_final_brake();
+    replay_reset_turn_brake();
     out.finished = true;
     replay_hold_current_yaw(&out, input);
     return out;
@@ -614,6 +662,7 @@ void nav_route_replay_stop(void)
         NAV_ROUTE_READY : NAV_ROUTE_IDLE;
     g_record_state.replay_index = 0u;
     replay_reset_final_brake();
+    replay_reset_turn_brake();
 }
 
 Nav_Route_Record_State_t nav_route_record_get_state(void)
