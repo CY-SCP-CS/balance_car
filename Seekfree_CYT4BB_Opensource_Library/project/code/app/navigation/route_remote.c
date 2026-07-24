@@ -19,6 +19,7 @@ static uint8 g_prev_record_switch;
 static uint8 g_prev_play_switch;
 static bool g_prev_connected;
 static bool g_next_keypoint_rotate720;
+static bool g_remote_started_replay;
 
 static bool remote_key_rising(const Remote_State_t *remote, uint8 index)
 {
@@ -63,9 +64,10 @@ void route_remote_update(const Nav_Input_t *input)
         g_next_keypoint_rotate720 = false;
         g_prev_connected = false;
         state = nav_route_record_get_state();
-        if (state.mode == NAV_ROUTE_REPLAYING) {
+        if (g_remote_started_replay && state.mode == NAV_ROUTE_REPLAYING) {
             nav_route_replay_stop();
         }
+        g_remote_started_replay = false;
         return;
     }
 
@@ -88,8 +90,14 @@ void route_remote_update(const Nav_Input_t *input)
     g_prev_record_switch = record_switch;
     g_prev_play_switch = play_switch;
 
+    state = nav_route_record_get_state();
+    if (g_remote_started_replay && state.mode != NAV_ROUTE_REPLAYING) {
+        g_remote_started_replay = false;
+    }
+
     if (record_switch_rising) {
         g_next_keypoint_rotate720 = false;
+        g_remote_started_replay = false;
         nav_route_replay_stop();
         if (nav_route_record_start(input)) {
             buzzer_beep(BEEP_TRIPLE);
@@ -147,14 +155,18 @@ void route_remote_update(const Nav_Input_t *input)
     }
 
     state = nav_route_record_get_state();
-    if (play_switch == 0u && state.mode == NAV_ROUTE_REPLAYING) {
+    if (g_remote_started_replay &&
+        play_switch == 0u &&
+        state.mode == NAV_ROUTE_REPLAYING) {
         nav_route_replay_stop();
+        g_remote_started_replay = false;
         return;
     }
 
     if (play_switch_rising && state.mode != NAV_ROUTE_RECORDING) {
         g_next_keypoint_rotate720 = false;
         if (nav_route_replay_start(input)) {
+            g_remote_started_replay = true;
             buzzer_beep(BEEP_DOUBLE_LONG);
         }
     }

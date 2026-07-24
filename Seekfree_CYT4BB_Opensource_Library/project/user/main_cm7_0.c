@@ -14,9 +14,12 @@
 #include "../code/app/robot_control/track_elements.h"
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
+#include "../code/hmi/input/input_handler.h"
 
 /* 手动测试开关: 标定完成后直接激活单边桥, 不依赖导航 */
 #define BRIDGE_MANUAL_TEST 1
+#define BOARD_REPLAY_KEY KEY_1
+#define BOARD_KEY_SCAN_PERIOD_MS 1u
 
 #define CM7_0_READY_MAGIC 0x43373031u
 
@@ -38,6 +41,22 @@ Motor_cmd_duty_t g_motor_cmd;
 Sensor_data_t g_sensor_data;
 
 Move_cmd_t g_move_cmd;
+
+static void board_replay_key_long_press(void)
+{
+    Nav_Route_Record_State_t route_state = nav_route_record_get_state();
+
+    if (route_state.mode == NAV_ROUTE_RECORDING) {
+        buzzer_beep(BEEP_ERROR);
+        return;
+    }
+
+    if (nav_route_replay_start(&g_nav_input)) {
+        buzzer_beep(BEEP_DOUBLE_LONG);
+    } else {
+        buzzer_beep(BEEP_ERROR);
+    }
+}
 
 int main(void)
 {
@@ -62,6 +81,8 @@ int main(void)
     // UI 运行在 CM7_1，CM7_0 只保留控制/感知/驱动逻辑。
     small_driver_uart_init();
     led_buzzer_init();
+    input_handler_init(BOARD_KEY_SCAN_PERIOD_MS);
+    input_handler_set_cb(BOARD_REPLAY_KEY, NULL, board_replay_key_long_press);
     remote_comm_init();
     robot_control_init();
 
@@ -106,6 +127,7 @@ int main(void)
         nav_input_update_from_ctrl(&g_nav_input, &g_ctrl);
         vision_feed_nav_input(&g_nav_input, &g_vision);
         route_remote_update(&g_nav_input);
+        input_handler_tick();
 
         {
             Nav_Route_Record_State_t route_state = nav_route_record_get_state();
