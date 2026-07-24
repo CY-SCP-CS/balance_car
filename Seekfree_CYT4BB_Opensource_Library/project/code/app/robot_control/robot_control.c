@@ -267,22 +267,15 @@ void control_task(void){
             if (!jump_is_active() && !jump_is_in_cooldown() && !track_bridge_climb_is_active()) {
                 /* speed_control 已关闭 (g_speed_pid 增益均为 0), 用纯 P 刹车 */
                 float speed_norm = (sensor_local.motor_left_speed + sensor_local.motor_right_speed) / 120.0f;
-                float abs_speed  = fabsf(speed_norm);
 
-                /* 跳后下坡恢复: 下坡未结束(倾角仍为负)或速度过高时不刹车 */
-                bool on_downhill = (sensor_local.angle_pitch < -0.04f);
-                bool too_fast    = (abs_speed > 0.3f);
+                bool stop_request    = (fabsf(cmd_local.target_speed) < 0.02f && fabsf(speed_norm) > 0.015f);
+                bool reverse_request = (cmd_local.target_speed * speed_norm < -0.0003f);
 
-                if (!on_downhill && !too_fast) {
-                    bool stop_request    = (fabsf(cmd_local.target_speed) < 0.02f && abs_speed > 0.015f);
-                    bool reverse_request = (cmd_local.target_speed * speed_norm < -0.0003f);
-
-                    if (stop_request || reverse_request) {
-                        /* 跳跃全过程关闭刹车 P 增益 */
-                        float brake_gain = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : g_brake_p_gain;
-                        pitch_target = -brake_gain * speed_norm;
-                        pitch_target = CLAMP(pitch_target, -0.25f, 0.25f);
-                    }
+                if (stop_request || reverse_request) {
+                    /* 跳跃全过程关闭刹车 P 增益 */
+                    float brake_gain = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : g_brake_p_gain;
+                    pitch_target = -brake_gain * speed_norm;
+                    pitch_target = CLAMP(pitch_target, -0.25f, 0.25f);
                 }
             }
             float pwm_base = balance_control(&sensor_local, &g_pitch_angle_pid, &g_pitch_gyro_pid, pitch_target);
