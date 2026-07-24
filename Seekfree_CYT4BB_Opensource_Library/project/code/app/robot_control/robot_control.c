@@ -280,7 +280,9 @@ void control_task(void){
                     bool reverse_request = (cmd_local.target_speed * speed_norm < -0.0003f);
 
                     if (stop_request || reverse_request) {
-                        pitch_target = -g_brake_p_gain * speed_norm;
+                        /* 跳跃全过程关闭刹车 P 增益 */
+                        float brake_gain = (jump_is_active() || jump_is_in_cooldown()) ? 0.0f : g_brake_p_gain;
+                        pitch_target = -brake_gain * speed_norm;
                         pitch_target = CLAMP(pitch_target, -0.25f, 0.25f);
                     }
                 }
