@@ -713,6 +713,44 @@ bool nav_route_replay_start(const Nav_Input_t *input)
     return true;
 }
 
+bool nav_route_replay_anchor_to_next_action(const Nav_Input_t *input,
+                                            Nav_Route_Point_Action_t action)
+{
+    if (input == NULL ||
+        action == NAV_ROUTE_POINT_ACTION_NONE ||
+        g_record_state.mode != NAV_ROUTE_REPLAYING ||
+        !g_record_state.route_ready ||
+        g_record_state.keypoint_count < 2u) {
+        return false;
+    }
+
+    for (uint8 index = g_record_state.replay_index;
+         index < g_record_state.keypoint_count;
+         index++) {
+        if (g_record_keypoints[index].action == action) {
+            const Nav_Keypoint_t *keypoint = &g_record_keypoints[index];
+            float local_yaw = keypoint_yaw_delta_from_start(index);
+            float start_yaw = nav_wrap_pi(input->yaw_rad - local_yaw);
+            float cos_yaw = cosf(start_yaw);
+            float sin_yaw = sinf(start_yaw);
+
+            g_replay_start_yaw = start_yaw;
+            g_replay_start_x = input->x_m -
+                               cos_yaw * keypoint->x_m +
+                               sin_yaw * keypoint->y_m;
+            g_replay_start_y = input->y_m -
+                               sin_yaw * keypoint->x_m -
+                               cos_yaw * keypoint->y_m;
+            g_record_state.replay_index = (uint8)(index + 1u);
+            replay_reset_final_brake();
+            replay_reset_segment_brake();
+            return true;
+        }
+    }
+
+    return false;
+}
+
 Nav_Output_t nav_route_replay_update(const Nav_Input_t *input)
 {
     Nav_Output_t out = {0};

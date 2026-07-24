@@ -15,6 +15,7 @@
 #include "../code/control/leg/angle_offset.h"
 #include "../code/hmi/indicator/led_buzzer.h"
 #include "../code/hmi/input/input_handler.h"
+#include <math.h>
 
 /* 手动测试开关: 标定完成后直接激活单边桥, 不依赖导航 */
 #define BRIDGE_MANUAL_TEST 1
@@ -50,6 +51,265 @@ Sensor_data_t g_sensor_data;
 Move_cmd_t g_move_cmd;
 
 static uint8 g_board_replay_slot = BOARD_ROUTE_SAVE_SLOT_2;
+
+#define COURSE_STEP_SPEED             (-0.15f)
+#define COURSE_STEP_COUNT             3u
+#define COURSE_STEP_TIMEOUT_MS        10000u
+#define COURSE_BUMPY_RUN_MS           4500u
+#define COURSE_BUMPY_TIMEOUT_MS       12000u
+#define COURSE_STABLE_TICKS           200u
+#define COURSE_STABLE_PITCH_RAD       (10.0f * DEG_TO_RAD)
+#define COURSE_STABLE_ROLL_RAD        (10.0f * DEG_TO_RAD)
+#define COURSE_STABLE_GYRO_RAD_S      0.8f
+#define COURSE_RECOVER_MS             500u
+
+typedef enum {
+    COURSE_ELEMENT_NAV = 0,
+    COURSE_ELEMENT_STEP,
+    COURSE_ELEMENT_BUMPY,
+    COURSE_ELEMENT_RECOVER
+} Course_Element_State_t;
+
+static Course_Element_State_t g_course_element_state = COURSE_ELEMENT_NAV;
+static uint32 g_course_element_start_ms = 0u;
+static uint16 g_course_element_stable_ticks = 0u;
+
+static void course_element_hold_heading(Ctrl_Input_t *ctrl,
+                                        const Nav_Input_t *input)
+{
+    if (ctrl == NULL || input == NULL) {
+        return;
+    }
+
+    ctrl->velocity_cmd = 0.0f;
+    ctrl->steering_cmd = 0.0f;
+    ctrl->yaw_target_valid = true;
+    ctrl->yaw_target_rad = input->yaw_rad;
+}
+
+static bool course_element_stable_update(const Ctrl_Input_t *ctrl)
+{
+    bool stable;
+
+    if (ctrl == NULL) {
+        g_course_element_stable_ticks = 0u;
+        return false;
+    }
+
+    stable = fabsf(ctrl->body_pitch) <= COURSE_STABLE_PITCH_RAD &&
+             fabsf(ctrl->body_roll) <= COURSE_STABLE_ROLL_RAD &&
+             fabsf(ctrl->gyro_pitch_rate) <= COURSE_STABLE_GYRO_RAD_S &&
+             fabsf(ctrl->gyro_roll_rate) <= COURSE_STABLE_GYRO_RAD_S;
+
+    if (stable) {
+        if (g_course_element_stable_ticks < COURSE_STABLE_TICKS) {
+            g_course_element_stable_ticks++;
+        }
+    } else {
+        g_course_element_stable_ticks = 0u;
+    }
+
+    return g_course_element_stable_ticks >= COURSE_STABLE_TICKS;
+}
+
+static uint32 course_element_elapsed_ms(const Nav_Input_t *input)
+{
+    if (input == NULL) {
+        return 0u;
+    }
+
+    return (uint32)(input->time_ms - g_course_element_start_ms);
+}
+
+static void course_element_begin(Course_Element_State_t state,
+                                 const Nav_Input_t *input)
+{
+    nav_adapter_set_odom_hold(true);
+    g_course_element_state = state;
+    g_course_element_start_ms = input != NULL ? input->time_ms : 0u;
+    g_course_element_stable_ticks = 0u;
+}
+
+static void course_element_begin_step(const Nav_Input_t *input)
+{
+    course_element_begin(COURSE_ELEMENT_STEP, input);
+    jump_start(COURSE_STEP_SPEED, COURSE_STEP_COUNT);
+}
+
+static void course_element_begin_bumpy(const Nav_Input_t *input)
+{
+    course_element_begin(COURSE_ELEMENT_BUMPY, input);
+    track_bumpy_activate();
+    track_bumpy_apply_compliance();
+}
+
+static bool course_element_finish_at_action(
+    const Nav_Input_t *input,
+    Nav_Route_Point_Action_t exit_action)
+{
+    bool anchored = nav_route_replay_anchor_to_next_action(input, exit_action);
+
+    nav_adapter_reset_odom_base();
+    nav_adapter_set_odom_hold(false);
+    g_course_element_state = COURSE_ELEMENT_NAV;
+    g_course_element_stable_ticks = 0u;
+
+    if (!anchored) {
+        nav_route_replay_stop();
+        buzzer_beep(BEEP_ERROR);
+        return false;
+    }
+
+    buzzer_beep(BEEP_SHORT);
+    return true;
+}
+
+static void course_element_enter_recover(const Nav_Input_t *input)
+{
+    jump_stop();
+    track_bumpy_restore_stiffness();
+    track_bumpy_deactivate();
+    nav_adapter_reset_odom_base();
+    nav_adapter_set_odom_hold(false);
+    nav_route_replay_stop();
+    g_course_element_state = COURSE_ELEMENT_RECOVER;
+    g_course_element_start_ms = input != NULL ? input->time_ms : 0u;
+    g_course_element_stable_ticks = 0u;
+    buzzer_beep(BEEP_ERROR);
+}
+
+static void course_handle_region_event(const Nav_Output_t *nav_out)
+{
+    if (nav_out == NULL) {
+        return;
+    }
+
+    if (nav_out->region_entered) {
+        switch (nav_out->region) {
+        case NAV_REGION_ROTATE:
+            track_rotate720_start();
+            break;
+        case NAV_REGION_SINGLE_BRIDGE:
+        case NAV_REGION_UPHILL:
+            track_bridge_climb_activate();
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (nav_out->region_exited) {
+        switch (nav_out->region) {
+        case NAV_REGION_SINGLE_BRIDGE:
+        case NAV_REGION_UPHILL:
+            track_bridge_climb_deactivate();
+            break;
+        case NAV_REGION_ROTATE:
+            track_rotate720_reset();
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+static void course_handle_waypoint_action(const Nav_Output_t *nav_out,
+                                          const Nav_Input_t *input)
+{
+    if (nav_out == NULL || input == NULL || !nav_out->waypoint_entered) {
+        return;
+    }
+
+    switch (nav_out->waypoint_action) {
+    case NAV_ROUTE_POINT_ACTION_ROTATE720:
+        track_rotate720_reset();
+        if (nav_out->target_yaw_valid) {
+            track_rotate720_start_with_target(nav_out->target_yaw_rad);
+        } else {
+            track_rotate720_start();
+        }
+        break;
+    case NAV_ROUTE_POINT_ACTION_STEP_START:
+        course_element_begin_step(input);
+        break;
+    case NAV_ROUTE_POINT_ACTION_BUMPY_START:
+        course_element_begin_bumpy(input);
+        break;
+    default:
+        break;
+    }
+}
+
+static void course_element_update(Ctrl_Input_t *ctrl, Nav_Input_t *input)
+{
+    Nav_Route_Record_State_t route_state = nav_route_record_get_state();
+
+    if (ctrl == NULL || input == NULL) {
+        return;
+    }
+
+    if (route_state.mode != NAV_ROUTE_REPLAYING &&
+        g_course_element_state != COURSE_ELEMENT_NAV &&
+        g_course_element_state != COURSE_ELEMENT_RECOVER) {
+        jump_stop();
+        track_bumpy_restore_stiffness();
+        track_bumpy_deactivate();
+        nav_adapter_reset_odom_base();
+        nav_adapter_set_odom_hold(false);
+        g_course_element_state = COURSE_ELEMENT_NAV;
+        g_course_element_stable_ticks = 0u;
+    }
+
+    switch (g_course_element_state) {
+    case COURSE_ELEMENT_NAV:
+        if (route_state.mode == NAV_ROUTE_REPLAYING) {
+            Nav_Output_t nav_out = nav_route_replay_update(input);
+
+            nav_apply_ctrl(ctrl, &nav_out);
+            course_handle_region_event(&nav_out);
+            course_handle_waypoint_action(&nav_out, input);
+        }
+        break;
+
+    case COURSE_ELEMENT_STEP:
+        course_element_hold_heading(ctrl, input);
+        if (!jump_is_active() &&
+            course_element_stable_update(ctrl)) {
+            (void)course_element_finish_at_action(
+                input,
+                NAV_ROUTE_POINT_ACTION_STEP_END);
+        } else if (course_element_elapsed_ms(input) >=
+                   COURSE_STEP_TIMEOUT_MS) {
+            course_element_enter_recover(input);
+        }
+        break;
+
+    case COURSE_ELEMENT_BUMPY:
+        course_element_hold_heading(ctrl, input);
+        if ((course_element_elapsed_ms(input) >= COURSE_BUMPY_RUN_MS ||
+             !track_bumpy_is_active()) &&
+            course_element_stable_update(ctrl)) {
+            track_bumpy_restore_stiffness();
+            track_bumpy_deactivate();
+            (void)course_element_finish_at_action(
+                input,
+                NAV_ROUTE_POINT_ACTION_BUMPY_END);
+        } else if (course_element_elapsed_ms(input) >=
+                   COURSE_BUMPY_TIMEOUT_MS) {
+            course_element_enter_recover(input);
+        }
+        break;
+
+    case COURSE_ELEMENT_RECOVER:
+    default:
+        course_element_hold_heading(ctrl, input);
+        if (course_element_elapsed_ms(input) >= COURSE_RECOVER_MS &&
+            course_element_stable_update(ctrl)) {
+            g_course_element_state = COURSE_ELEMENT_NAV;
+        }
+        break;
+    }
+}
 
 static Beep_Pattern_t board_route_slot_beep(uint8 reserved_slot)
 {
@@ -217,63 +477,7 @@ int main(void)
         route_remote_update(&g_nav_input);
         input_handler_tick();
 
-        {
-            Nav_Route_Record_State_t route_state = nav_route_record_get_state();
-
-            if (route_state.mode == NAV_ROUTE_REPLAYING) {
-                Nav_Output_t nav_out = nav_route_replay_update(&g_nav_input);
-                nav_apply_ctrl(&g_ctrl, &nav_out);
-
-                /* ── 赛道元素区域响应 ── */
-                if (nav_out.region_entered) {
-                    switch (nav_out.region) {
-                    case NAV_REGION_ROTATE:
-                        track_rotate720_start();
-                        break;
-                    case NAV_REGION_JUMP:
-                        jump_start(-0.15f, 3);
-                        break;
-                    case NAV_REGION_SINGLE_BRIDGE:
-                    case NAV_REGION_UPHILL:
-                        track_bridge_climb_activate();
-                        break;
-                    case NAV_REGION_SPEED_BUMP:
-                        track_bumpy_activate();
-                        track_bumpy_apply_compliance();
-                        break;
-                    default:
-                        break;
-                    }
-                }
-                if (nav_out.region_exited) {
-                    switch (nav_out.region) {
-                    case NAV_REGION_SINGLE_BRIDGE:
-                    case NAV_REGION_UPHILL:
-                        track_bridge_climb_deactivate();
-                        break;
-                    case NAV_REGION_SPEED_BUMP:
-                        track_bumpy_restore_stiffness();
-                        track_bumpy_deactivate();
-                        break;
-                    case NAV_REGION_ROTATE:
-                        track_rotate720_reset();
-                        break;
-                    default:
-                        break;
-                    }
-                }
-                if (nav_out.waypoint_entered &&
-                    nav_out.waypoint_action ==
-                    NAV_ROUTE_POINT_ACTION_ROTATE720) {
-                    track_rotate720_reset();
-                    if (nav_out.target_yaw_valid) {
-                        track_rotate720_start_with_target(nav_out.target_yaw_rad);
-                    } else {
-                        track_rotate720_start();
-                    }
-                }
-            }
-        }
+        course_element_update(&g_ctrl, &g_nav_input);
 
         if (track_rotate720_is_active()) {
             g_ctrl.velocity_cmd = 0.0f;

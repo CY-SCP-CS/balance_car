@@ -45,6 +45,8 @@ bool nav_route_record_load_previous_saved(void);
 bool nav_route_record_load_reserved_slot(uint8 reserved_slot);
 bool nav_route_replay_start(const Nav_Input_t *input);
 Nav_Output_t nav_route_replay_update(const Nav_Input_t *input);
+bool nav_route_replay_anchor_to_next_action(const Nav_Input_t *input,
+                                            Nav_Route_Point_Action_t action);
 void nav_route_replay_stop(void);
 Nav_Route_Record_State_t nav_route_record_get_state(void);
 
