@@ -19,6 +19,13 @@
 /* 手动测试开关: 标定完成后直接激活单边桥, 不依赖导航 */
 #define BRIDGE_MANUAL_TEST 1
 #define BOARD_REPLAY_KEY KEY_1
+#define BOARD_ROUTE_SAVE_KEY_2 KEY_2
+#define BOARD_ROUTE_SAVE_KEY_3 KEY_3
+#define BOARD_ROUTE_SAVE_KEY_4 KEY_4
+#define BOARD_ROUTE_SAVE_SLOT_2 0u
+#define BOARD_ROUTE_SAVE_SLOT_3 1u
+#define BOARD_ROUTE_SAVE_SLOT_4 2u
+#define BOARD_ROUTE_SAVE_SLOT_COUNT 3u
 #define BOARD_KEY_SCAN_PERIOD_MS 1u
 
 #define CM7_0_READY_MAGIC 0x43373031u
@@ -42,6 +49,33 @@ Sensor_data_t g_sensor_data;
 
 Move_cmd_t g_move_cmd;
 
+static uint8 g_board_replay_slot = BOARD_ROUTE_SAVE_SLOT_2;
+
+static Beep_Pattern_t board_route_slot_beep(uint8 reserved_slot)
+{
+    switch (reserved_slot) {
+    case BOARD_ROUTE_SAVE_SLOT_2:
+        return BEEP_SHORT;
+    case BOARD_ROUTE_SAVE_SLOT_3:
+        return BEEP_DOUBLE;
+    case BOARD_ROUTE_SAVE_SLOT_4:
+        return BEEP_TRIPLE;
+    default:
+        return BEEP_ERROR;
+    }
+}
+
+static void board_route_select_reserved_slot(uint8 reserved_slot)
+{
+    if (reserved_slot >= BOARD_ROUTE_SAVE_SLOT_COUNT) {
+        buzzer_beep(BEEP_ERROR);
+        return;
+    }
+
+    g_board_replay_slot = reserved_slot;
+    buzzer_beep(board_route_slot_beep(reserved_slot));
+}
+
 static void board_replay_key_long_press(void)
 {
     Nav_Route_Record_State_t route_state = nav_route_record_get_state();
@@ -51,11 +85,56 @@ static void board_replay_key_long_press(void)
         return;
     }
 
+    if (!nav_route_record_load_reserved_slot(g_board_replay_slot)) {
+        buzzer_beep(BEEP_ERROR);
+        return;
+    }
+
     if (nav_route_replay_start(&g_nav_input)) {
         buzzer_beep(BEEP_DOUBLE_LONG);
     } else {
         buzzer_beep(BEEP_ERROR);
     }
+}
+
+static void board_route_save_reserved_slot(uint8 reserved_slot)
+{
+    if (nav_route_record_save_reserved_slot(reserved_slot)) {
+        g_board_replay_slot = reserved_slot;
+        buzzer_beep(BEEP_LONG);
+    } else {
+        buzzer_beep(BEEP_ERROR);
+    }
+}
+
+static void board_route_select_key2_short_press(void)
+{
+    board_route_select_reserved_slot(BOARD_ROUTE_SAVE_SLOT_2);
+}
+
+static void board_route_select_key3_short_press(void)
+{
+    board_route_select_reserved_slot(BOARD_ROUTE_SAVE_SLOT_3);
+}
+
+static void board_route_select_key4_short_press(void)
+{
+    board_route_select_reserved_slot(BOARD_ROUTE_SAVE_SLOT_4);
+}
+
+static void board_route_save_key2_long_press(void)
+{
+    board_route_save_reserved_slot(BOARD_ROUTE_SAVE_SLOT_2);
+}
+
+static void board_route_save_key3_long_press(void)
+{
+    board_route_save_reserved_slot(BOARD_ROUTE_SAVE_SLOT_3);
+}
+
+static void board_route_save_key4_long_press(void)
+{
+    board_route_save_reserved_slot(BOARD_ROUTE_SAVE_SLOT_4);
 }
 
 int main(void)
@@ -83,6 +162,15 @@ int main(void)
     led_buzzer_init();
     input_handler_init(BOARD_KEY_SCAN_PERIOD_MS);
     input_handler_set_cb(BOARD_REPLAY_KEY, NULL, board_replay_key_long_press);
+    input_handler_set_cb(BOARD_ROUTE_SAVE_KEY_2,
+                         board_route_select_key2_short_press,
+                         board_route_save_key2_long_press);
+    input_handler_set_cb(BOARD_ROUTE_SAVE_KEY_3,
+                         board_route_select_key3_short_press,
+                         board_route_save_key3_long_press);
+    input_handler_set_cb(BOARD_ROUTE_SAVE_KEY_4,
+                         board_route_select_key4_short_press,
+                         board_route_save_key4_long_press);
     remote_comm_init();
     robot_control_init();
 

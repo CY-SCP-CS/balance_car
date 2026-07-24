@@ -9,6 +9,9 @@
 #define NAV_ROUTE_STORAGE_VERSION  10u
 #define NAV_ROUTE_STORAGE_SLOT_COUNT  3u
 #define NAV_ROUTE_STORAGE_FIRST_PAGE  (FLASH_PAGE_NUM - NAV_ROUTE_STORAGE_SLOT_COUNT)
+#define NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT  3u
+#define NAV_ROUTE_STORAGE_RESERVED_FIRST_PAGE \
+    (NAV_ROUTE_STORAGE_FIRST_PAGE - NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT)
 #define NAV_ROUTE_STORAGE_SECTOR   0u
 
 typedef struct {
@@ -30,6 +33,9 @@ typedef union {
 
 typedef char Nav_Route_Storage_Page_Fit_Check[
     (NAV_ROUTE_STORAGE_WORDS <= FLASH_PAGE_LENGTH) ? 1 : -1];
+typedef char Nav_Route_Storage_Reserved_Page_Check[
+    (NAV_ROUTE_STORAGE_FIRST_PAGE >=
+     NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT) ? 1 : -1];
 
 static Nav_Route_Storage_Buffer_t g_storage_buffer;
 static bool g_storage_ready;
@@ -57,6 +63,12 @@ static uint32 storage_checksum(const uint32 *words, uint32 word_count)
 static uint32 storage_slot_page(uint8 slot)
 {
     return NAV_ROUTE_STORAGE_FIRST_PAGE + slot;
+}
+
+static uint32 storage_reserved_page(uint8 reserved_slot)
+{
+    return NAV_ROUTE_STORAGE_RESERVED_FIRST_PAGE +
+        ((NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT - 1u) - reserved_slot);
 }
 
 static bool storage_buffer_valid(uint8 max_keypoints,
@@ -95,7 +107,7 @@ static bool storage_buffer_valid(uint8 max_keypoints,
     return true;
 }
 
-static bool storage_read_slot(uint8 slot,
+static bool storage_read_page(uint32 page,
                               Nav_Keypoint_t *keypoints,
                               uint8 max_keypoints,
                               uint8 *keypoint_count,
@@ -103,14 +115,14 @@ static bool storage_read_slot(uint8 slot,
 {
     uint8 stored_keypoint_count = 0u;
 
-    if (slot >= NAV_ROUTE_STORAGE_SLOT_COUNT ||
+    if (page >= FLASH_PAGE_NUM ||
         max_keypoints == 0u ||
         NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
         return false;
     }
 
     flash_read_page(NAV_ROUTE_STORAGE_SECTOR,
-                    storage_slot_page(slot),
+                    page,
                     g_storage_buffer.words,
                     NAV_ROUTE_STORAGE_WORDS);
 
@@ -129,6 +141,64 @@ static bool storage_read_slot(uint8 slot,
     }
 
     return true;
+}
+
+static bool storage_read_slot(uint8 slot,
+                              Nav_Keypoint_t *keypoints,
+                              uint8 max_keypoints,
+                              uint8 *keypoint_count,
+                              uint32 *sequence)
+{
+    if (slot >= NAV_ROUTE_STORAGE_SLOT_COUNT) {
+        return false;
+    }
+
+    return storage_read_page(storage_slot_page(slot),
+                             keypoints,
+                             max_keypoints,
+                             keypoint_count,
+                             sequence);
+}
+
+static bool storage_write_page_image(uint32 page,
+                                     const Nav_Keypoint_t *keypoints,
+                                     uint8 keypoint_count,
+                                     uint32 sequence)
+{
+    if (page >= FLASH_PAGE_NUM ||
+        keypoints == NULL ||
+        keypoint_count < 2u ||
+        keypoint_count > NAV_RECORD_MAX_KEYPOINTS ||
+        NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
+        return false;
+    }
+
+    storage_ensure_init();
+
+    memset(&g_storage_buffer, 0xFF, sizeof(g_storage_buffer));
+    g_storage_buffer.image.magic = NAV_ROUTE_STORAGE_MAGIC;
+    g_storage_buffer.image.version = NAV_ROUTE_STORAGE_VERSION;
+    g_storage_buffer.image.sequence = sequence;
+    g_storage_buffer.image.keypoint_count = keypoint_count;
+    g_storage_buffer.image.checksum = 0u;
+
+    for (uint8 i = 0u; i < keypoint_count; i++) {
+        g_storage_buffer.image.keypoints[i] = keypoints[i];
+    }
+
+    g_storage_buffer.image.checksum =
+        storage_checksum(g_storage_buffer.words, NAV_ROUTE_STORAGE_WORDS);
+
+    flash_write_page(NAV_ROUTE_STORAGE_SECTOR,
+                     page,
+                     g_storage_buffer.words,
+                     NAV_ROUTE_STORAGE_WORDS);
+
+    return storage_read_page(page,
+                             NULL,
+                             NAV_RECORD_MAX_KEYPOINTS,
+                             NULL,
+                             NULL);
 }
 
 static bool storage_find_latest_slot(uint8 *latest_slot,
@@ -236,29 +306,67 @@ bool nav_route_storage_save(const Nav_Keypoint_t *keypoints,
         sequence = latest_sequence + 1u;
     }
 
-    memset(&g_storage_buffer, 0xFF, sizeof(g_storage_buffer));
-    g_storage_buffer.image.magic = NAV_ROUTE_STORAGE_MAGIC;
-    g_storage_buffer.image.version = NAV_ROUTE_STORAGE_VERSION;
-    g_storage_buffer.image.sequence = sequence;
-    g_storage_buffer.image.keypoint_count = keypoint_count;
-    g_storage_buffer.image.checksum = 0u;
+    return storage_write_page_image(storage_slot_page(write_slot),
+                                    keypoints,
+                                    keypoint_count,
+                                    sequence);
+}
 
-    for (uint8 i = 0u; i < keypoint_count; i++) {
-        g_storage_buffer.image.keypoints[i] = keypoints[i];
+bool nav_route_storage_save_reserved_slot(const Nav_Keypoint_t *keypoints,
+                                          uint8 keypoint_count,
+                                          uint8 reserved_slot)
+{
+    uint8 latest_slot = 0u;
+    uint32 latest_sequence = 0u;
+    uint32 sequence = 1u;
+
+    if (reserved_slot >= NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT ||
+        keypoints == NULL ||
+        keypoint_count < 2u ||
+        keypoint_count > NAV_RECORD_MAX_KEYPOINTS ||
+        NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
+        return false;
     }
 
-    g_storage_buffer.image.checksum =
-        storage_checksum(g_storage_buffer.words, NAV_ROUTE_STORAGE_WORDS);
+    storage_ensure_init();
 
-    flash_write_page(NAV_ROUTE_STORAGE_SECTOR,
-                     storage_slot_page(write_slot),
-                     g_storage_buffer.words,
-                     NAV_ROUTE_STORAGE_WORDS);
+    if (storage_find_latest_slot(&latest_slot, &latest_sequence)) {
+        sequence = latest_sequence + 1u;
+    }
 
-    return storage_read_slot(write_slot,
-                             NULL,
-                             NAV_RECORD_MAX_KEYPOINTS,
-                             NULL,
+    return storage_write_page_image(storage_reserved_page(reserved_slot),
+                                    keypoints,
+                                    keypoint_count,
+                                    sequence);
+}
+
+bool nav_route_storage_save_reserved(const Nav_Keypoint_t *keypoints,
+                                     uint8 keypoint_count)
+{
+    return nav_route_storage_save_reserved_slot(keypoints,
+                                               keypoint_count,
+                                               0u);
+}
+
+bool nav_route_storage_load_reserved_slot(Nav_Keypoint_t *keypoints,
+                                          uint8 max_keypoints,
+                                          uint8 *keypoint_count,
+                                          uint8 reserved_slot)
+{
+    if (reserved_slot >= NAV_ROUTE_STORAGE_RESERVED_PAGE_COUNT ||
+        keypoints == NULL ||
+        keypoint_count == NULL ||
+        max_keypoints == 0u ||
+        NAV_ROUTE_STORAGE_WORDS > FLASH_PAGE_LENGTH) {
+        return false;
+    }
+
+    storage_ensure_init();
+
+    return storage_read_page(storage_reserved_page(reserved_slot),
+                             keypoints,
+                             max_keypoints,
+                             keypoint_count,
                              NULL);
 }
 

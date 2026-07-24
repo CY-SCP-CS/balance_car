@@ -36,10 +36,13 @@ bool nav_route_record_keypoint(const Nav_Input_t *input);
 bool nav_route_record_keypoint_with_action(const Nav_Input_t *input,
                                            Nav_Route_Point_Action_t action);
 bool nav_route_record_finish(void);
+bool nav_route_record_save_reserved(void);
+bool nav_route_record_save_reserved_slot(uint8 reserved_slot);
 void nav_route_record_reset(void);
 bool nav_route_record_load_saved_history(uint8 history_index);
 bool nav_route_record_load_saved(void);
 bool nav_route_record_load_previous_saved(void);
+bool nav_route_record_load_reserved_slot(uint8 reserved_slot);
 bool nav_route_replay_start(const Nav_Input_t *input);
 Nav_Output_t nav_route_replay_update(const Nav_Input_t *input);
 void nav_route_replay_stop(void);
