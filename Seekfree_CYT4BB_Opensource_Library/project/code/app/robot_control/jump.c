@@ -56,11 +56,9 @@ typedef enum {
 
 /* 飞行阶段检测阈值 */
 #define IMPACT_ACCEL          1.2f    /* accel_z > 此值 = 触地 */
-#define SINGLE_IMPACT_ACCEL   1.6f    /* 单跳触地阈值, 更高防止缓冲误触发 */
 #define FREEZE_MS             15      /* 伸腿后冻结期, 防误触发 */
 #define FLY_TIMEOUT_CYCLES    500     /* 飞行总超时 */
-#define ACCEL_FREEFALL_THRESHOLD 0.3f /* 自由落体判据 (旧, 保留给多跳) */
-#define ACCEL_FREEFALL_DROP     0.8f /* 单跳: accel_z 从峰值跌落超过此值=离地, 与车身倾角无关 */
+#define ACCEL_FREEFALL_THRESHOLD 0.3f /* 自由落体判据 */
 
 /* 跳跃结束后速度环冷却期 (ms) */
 #define JUMP_COOLDOWN_MS      2000
@@ -92,9 +90,6 @@ static float g_base_y_right = 0.0f;
 
 /* 跳跃结束后冷却计时器 (cycles), 期间 g_speed_pid 保持关闭 */
 static uint16_t g_cooldown_timer = 0;
-
-/* 单跳: LAUNCH 阶段追踪 accel_z 峰值, 用于跌落法离地检测 */
-static float g_launch_accel_peak = 0.0f;
 
 /* ======================== 辅助函数 ============================= */
 
@@ -254,25 +249,11 @@ static void run_launch(const Sensor_data_t *sensor,
     left->y  = g_base_y_left  + dy;
     right->y = g_base_y_right + dy;
 
-    /* 单跳: 追踪 accel_z 峰值, 用跌落法检测离地 (不受车身倾角影响) */
-    /* 多跳: 用绝对阈值 |accel_z| < 0.3g */
-    if (g_jump_total == 1) {
-        if (g_cycle == 1) {
-            g_launch_accel_peak = 0.0f;
-        }
-        if (sensor->accel_z > g_launch_accel_peak) {
-            g_launch_accel_peak = sensor->accel_z;
-        }
-    }
-
+    /* 离地检测: 单跳蹬地渐变结束后即启用, 防止腿在空中过度伸展 */
     bool airborne = false;
-    uint16_t freefall_delay = (g_jump_total == 1) ? 100 : 80;
+    uint16_t freefall_delay = (g_jump_total == 1) ? LAUNCH_RAMP_MS : 80;
     if (g_cycle > freefall_delay) {
-        if (g_jump_total == 1) {
-            airborne = (g_launch_accel_peak - sensor->accel_z > ACCEL_FREEFALL_DROP);
-        } else {
-            airborne = (fabsf(sensor->accel_z) < ACCEL_FREEFALL_THRESHOLD);
-        }
+        airborne = (fabsf(sensor->accel_z) < ACCEL_FREEFALL_THRESHOLD);
     }
 
     if (airborne || g_cycle >= LAUNCH_TIMEOUT) {
@@ -317,8 +298,7 @@ static void run_air(const Sensor_data_t *sensor,
     left->y  = y;
     right->y = y;
 
-    float impact_threshold = (g_jump_total == 1) ? SINGLE_IMPACT_ACCEL : IMPACT_ACCEL;
-    bool impact = (sensor->accel_z > impact_threshold)
+    bool impact = (sensor->accel_z > IMPACT_ACCEL)
                   && (g_cycle > (uint16_t)(TUCK_RAMP_MS + REACH_RAMP_MS + FREEZE_MS));
 
     if (impact || g_cycle > FLY_TIMEOUT_CYCLES) {

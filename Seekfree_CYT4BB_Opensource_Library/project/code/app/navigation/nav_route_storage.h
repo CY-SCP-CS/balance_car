@@ -6,6 +6,15 @@
 void nav_route_storage_init(void);
 bool nav_route_storage_save(const Nav_Keypoint_t *keypoints,
                             uint8 keypoint_count);
+bool nav_route_storage_save_reserved(const Nav_Keypoint_t *keypoints,
+                                     uint8 keypoint_count);
+bool nav_route_storage_save_reserved_slot(const Nav_Keypoint_t *keypoints,
+                                          uint8 keypoint_count,
+                                          uint8 reserved_slot);
+bool nav_route_storage_load_reserved_slot(Nav_Keypoint_t *keypoints,
+                                          uint8 max_keypoints,
+                                          uint8 *keypoint_count,
+                                          uint8 reserved_slot);
 bool nav_route_storage_load_history(Nav_Keypoint_t *keypoints,
                                     uint8 max_keypoints,
                                     uint8 *keypoint_count,

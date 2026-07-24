@@ -2269,6 +2269,15 @@
                         <name>$PROJ_DIR$\..\..\code\hmi\indicator\led_buzzer.h</name>
                     </file>
                 </group>
+                <group>
+                    <name>input</name>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\input\input_handler.c</name>
+                    </file>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\code\hmi\input\input_handler.h</name>
+                    </file>
+                </group>
             </group>
             <group>
                 <name>interrupts</name>

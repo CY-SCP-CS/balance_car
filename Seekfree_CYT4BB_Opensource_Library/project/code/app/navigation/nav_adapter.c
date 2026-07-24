@@ -11,6 +11,9 @@
 #define NAV_GPS_MAX_YAW_CORRECTION_RAD     (25.0f * NAV_DEG_TO_RAD)
 #define NAV_GPS_YAW_SIGN                   (1.0f)
 
+static bool g_nav_odom_hold = false;
+static bool g_nav_odom_resync = false;
+
 static float nav_limit(float value, float limit)
 {
     if (value > limit) {
@@ -24,10 +27,32 @@ static float nav_limit(float value, float limit)
     return value;
 }
 
+void nav_adapter_set_odom_hold(bool hold)
+{
+    if (g_nav_odom_hold != hold) {
+        g_nav_odom_hold = hold;
+        g_nav_odom_resync = true;
+    }
+}
+
+bool nav_adapter_is_odom_held(void)
+{
+    return g_nav_odom_hold;
+}
+
+void nav_adapter_reset_odom_base(void)
+{
+    g_nav_odom_resync = true;
+}
+
 void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
 {
     static bool odom_set = false;
     static float last_odom_distance = 0.0f;
+    static float last_odom_x = 0.0f;
+    static float last_odom_y = 0.0f;
+    static float nav_x = 0.0f;
+    static float nav_y = 0.0f;
     static float fused_distance = 0.0f;
     static bool gps_distance_anchor_set = false;
     static float gps_distance_offset = 0.0f;
@@ -53,14 +78,35 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     odom_yaw = robot_control_get_yaw();
     if (!odom_set) {
         last_odom_distance = odom_distance;
+        last_odom_x = odom_x;
+        last_odom_y = odom_y;
+        nav_x = odom_x;
+        nav_y = odom_y;
         fused_distance = odom_distance;
         odom_set = true;
+        g_nav_odom_resync = false;
+    } else if (g_nav_odom_resync) {
+        last_odom_distance = odom_distance;
+        last_odom_x = odom_x;
+        last_odom_y = odom_y;
+        gps_distance_anchor_set = false;
+        g_nav_odom_resync = false;
+    } else if (g_nav_odom_hold) {
+        last_odom_distance = odom_distance;
+        last_odom_x = odom_x;
+        last_odom_y = odom_y;
     } else {
         fused_distance += odom_distance - last_odom_distance;
+        nav_x += odom_x - last_odom_x;
+        nav_y += odom_y - last_odom_y;
         last_odom_distance = odom_distance;
+        last_odom_x = odom_x;
+        last_odom_y = odom_y;
     }
 
-    if (gps_shared_read(&gps) && gps.valid != 0u && gps.origin_set != 0u) {
+    if (g_nav_odom_hold) {
+        gps_distance_anchor_set = false;
+    } else if (gps_shared_read(&gps) && gps.valid != 0u && gps.origin_set != 0u) {
         bool new_gps_sample = gps.sequence != last_gps_sequence;
 
         if (gps.sequence < last_gps_sequence) {
@@ -113,8 +159,8 @@ void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl)
     }
 
     input->yaw_rad = nav_wrap_pi(odom_yaw + gps_yaw_correction);
-    input->x_m = odom_x;
-    input->y_m = odom_y;
+    input->x_m = nav_x;
+    input->y_m = nav_y;
     input->distance_m = fused_distance;
     input->speed_mps = robot_control_get_speed_mps();
 

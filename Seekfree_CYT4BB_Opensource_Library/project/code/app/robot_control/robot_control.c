@@ -60,7 +60,7 @@ static VMC_Config_t g_vmc_config;
 
 PID_Controller_t g_pitch_angle_pid, g_pitch_gyro_pid, g_speed_pid;
 PID_Controller_t g_yaw_angle_pid, g_yaw_pid;
-PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
+static PID_Controller_t g_leg_speed_pid, g_leg_roll_pid;
 static float g_brake_p_gain = -0.3f;  /* 刹车 P 增益, slot 8 可调 */
 
 void robot_control_init(void){
@@ -213,13 +213,10 @@ static bool safety_check(const Sensor_data_t *sensor, Motor_cmd_duty_t *motor_cm
         goto fault;
     }
 
-    /* ── 倾角保护 (颠簸路段期间关闭, 防止路肩导致的姿态振荡误触发) ── */
-    if (!track_bumpy_is_active()) {
-        if (fabsf(pitch_deg) > SAFE_PITCH_MAX_DEG ||
-            fabsf(roll_deg)  > SAFE_ROLL_MAX_DEG) {
-            g_safety_fault = true;
-            goto fault;
-        }
+    if (fabsf(pitch_deg) > SAFE_PITCH_MAX_DEG ||
+        fabsf(roll_deg)  > SAFE_ROLL_MAX_DEG) {
+        g_safety_fault = true;
+        goto fault;
     }
 
     /* ── 关节角度保护 (相对限位的转角) ── */
@@ -268,6 +265,7 @@ void control_task(void){
             float pitch_target = 0.0f;
 
             if (!jump_is_active() && !jump_is_in_cooldown() && !track_bridge_climb_is_active()) {
+                /* speed_control 已关闭 (g_speed_pid 增益均为 0), 用纯 P 刹车 */
                 float speed_norm = (sensor_local.motor_left_speed + sensor_local.motor_right_speed) / 120.0f;
                 float abs_speed  = fabsf(speed_norm);
 
@@ -295,20 +293,10 @@ void control_task(void){
         /* ── 720° 原地旋转: 设置 target_direction + target_roll ── */
         track_rotate720_update(&sensor_local, &cmd_local);
 
-        /* ── 颠簸路段: 伸腿抬底盘 + 柔顺KP + 低速 ── */
-        {
-            static bool bumpy_was_active = false;
-            if (track_bumpy_is_active()) {
-                track_bumpy_apply_compliance();   /* 腿PID */
-                track_bumpy_apply_balance_pid();  /* 平衡PID: 腿伸长后等效摆长变大 */
-                track_bumpy_update(&sensor_local);
-                cmd_local.target_direction += track_bumpy_get_yaw_bias();
-                bumpy_was_active = true;
-            } else if (bumpy_was_active) {
-                track_bumpy_restore_stiffness();
-                track_bumpy_restore_balance_pid();
-                bumpy_was_active = false;
-            }
+        /* ── 颠簸路段: 交替偏航 + 单侧收腿, 单轮过条 ── */
+        if (track_bumpy_is_active()) {
+            track_bumpy_update(&sensor_local);
+            cmd_local.target_direction += track_bumpy_get_yaw_bias();
         }
 
         /* 旋转完成时复位 yaw PID, 锁定当前朝向 */
@@ -375,9 +363,9 @@ void control_task(void){
         if (jump_is_in_cooldown()) {
             cmd_local.target_speed = 0.2f;
         }
-        /* 颠簸路段: 低速 (由 track_bumpy_get_speed 统一控制) */
+        /* 颠簸路段: 极慢速度 */
         if (track_bumpy_is_active()) {
-            cmd_local.target_speed = track_bumpy_get_speed();
+            cmd_local.target_speed = 0.2f;
         }
         /* 起跳前自稳+下蹲: 保持前向接近速度, 蹬地和着地阶段不干预 */
         if (jump_is_stabilizing() || jump_is_squatting()) {

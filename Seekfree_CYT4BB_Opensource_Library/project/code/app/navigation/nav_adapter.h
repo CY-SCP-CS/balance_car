@@ -8,5 +8,8 @@
 
 void nav_input_update_from_ctrl(Nav_Input_t *input, const Ctrl_Input_t *ctrl);
 void nav_apply_ctrl(Ctrl_Input_t *ctrl, const Nav_Output_t *nav);
+void nav_adapter_set_odom_hold(bool hold);
+bool nav_adapter_is_odom_held(void);
+void nav_adapter_reset_odom_base(void);
 
 #endif
